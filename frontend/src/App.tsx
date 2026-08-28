@@ -16,14 +16,14 @@ import { AddPatientWizard } from "@/pages/doctor/AddPatientWizard";
 import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
 import { ClinicalCopilot } from "@/pages/doctor/ClinicalCopilot";
 import { DoctorAnalyticsPage } from "@/pages/doctor/DoctorAnalytics";
-import { MultiPatientComparePage } from "@/pages/doctor/MultiPatientCompare";
+import { DoctorAppointmentsPage } from "@/pages/doctor/DoctorAppointments";
 
 import { PatientDashboard } from "@/pages/patient/PatientDashboard";
 import { MedicationTracker } from "@/pages/patient/MedicationTracker";
 import { DietManager } from "@/pages/patient/DietManager";
 import { PatientChat } from "@/pages/patient/PatientChat";
 import { LabReports } from "@/pages/patient/LabReports";
-import { Appointments } from "@/pages/patient/Appointments";
+import { Appointments as PatientAppointmentsPage } from "@/pages/patient/Appointments";
 
 export default function App() {
   return (
@@ -52,7 +52,7 @@ export default function App() {
           <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />
           <Route path="/doctor/copilot" element={<ClinicalCopilot />} />
           <Route path="/doctor/analytics" element={<DoctorAnalyticsPage />} />
-          <Route path="/doctor/compare" element={<MultiPatientComparePage />} />
+          <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />
           
           {/* Patient Portal Routes */}
           <Route path="/patient/dashboard" element={<PatientDashboard />} />
@@ -60,7 +60,8 @@ export default function App() {
           <Route path="/patient/diet" element={<DietManager />} />
           <Route path="/patient/chat" element={<PatientChat />} />
           <Route path="/patient/lab-reports" element={<LabReports />} />
-          <Route path="/appointments" element={<Appointments />} />
+          <Route path="/patient/appointments" element={<PatientAppointmentsPage />} />
+          <Route path="/appointments" element={<PatientAppointmentsPage />} />
 
           {/* Shared Tools */}
           <Route path="/find-care" element={<FindCare />} />

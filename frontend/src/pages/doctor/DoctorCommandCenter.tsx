@@ -162,7 +162,7 @@ export const DoctorCommandCenter: React.FC = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-teal-deep">
-                      {new Date(apt.date_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(apt.date_time || apt.appointment_date || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                     <span className="font-display font-semibold text-ink text-base">{apt.patient_name}</span>
                   </div>

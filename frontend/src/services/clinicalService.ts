@@ -184,8 +184,59 @@ export async function sendPatientClarificationChat(message: string): Promise<Pat
 
 /* ==================== APPOINTMENTS & DOCUMENTS ==================== */
 
+export interface TimeSlot {
+  time: string;
+  status: "available" | "busy";
+  appointment_id?: string;
+}
+
+export interface DoctorAvailabilityData {
+  doctor_id: string;
+  doctor_name: string;
+  date: string;
+  slots: TimeSlot[];
+}
+
+export async function fetchDoctorAvailability(doctorId = "doc_01", date = "2026-09-05"): Promise<DoctorAvailabilityData> {
+  return apiFetch<DoctorAvailabilityData>(`/api/appointments/availability?doctor_id=${doctorId}&date=${date}`);
+}
+
+export async function requestPatientAppointment(payload: {
+  doctor_id: string;
+  appointment_date: string;
+  reason: string;
+  notes?: string;
+}): Promise<AppointmentRecord> {
+  return apiFetch<AppointmentRecord>("/api/appointments/request", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchDoctorAppointments(statusFilter?: string): Promise<AppointmentRecord[]> {
+  const url = statusFilter
+    ? `/api/appointments/doctor-queue?status_filter=${encodeURIComponent(statusFilter)}`
+    : "/api/appointments/doctor-queue";
+  return apiFetch<AppointmentRecord[]>(url);
+}
+
+export async function fetchPatientAppointments(): Promise<AppointmentRecord[]> {
+  return apiFetch<AppointmentRecord[]>("/api/appointments/patient-queue");
+}
+
+export async function processAppointmentAction(
+  appointmentId: string,
+  action: "confirm" | "decline" | "complete" | "cancel",
+  notes = ""
+): Promise<AppointmentRecord> {
+  return apiFetch<AppointmentRecord>(`/api/appointments/${appointmentId}/action`, {
+    method: "POST",
+    body: JSON.stringify({ action, notes }),
+  });
+}
+
 export async function fetchAppointments(): Promise<AppointmentRecord[]> {
-  return apiFetch<AppointmentRecord[]>("/api/appointments");
+  return apiFetch<AppointmentRecord[]>("/api/appointments/patient-queue");
 }
 
 export async function requestAppointment(payload: {
@@ -193,9 +244,10 @@ export async function requestAppointment(payload: {
   date_time: string;
   reason: string;
 }): Promise<AppointmentRecord> {
-  return apiFetch<AppointmentRecord>("/api/appointments", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  return requestPatientAppointment({
+    doctor_id: payload.doctor_id,
+    appointment_date: payload.date_time,
+    reason: payload.reason,
   });
 }
 

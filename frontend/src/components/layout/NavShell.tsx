@@ -31,8 +31,7 @@ const DOCTOR_NAV_ITEMS: NavItem[] = [
   { to: "/doctor/patients", label: "My Patients", icon: Users },
   { to: "/doctor/copilot", label: "Clinical Copilot", icon: Sparkles },
   { to: "/doctor/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/doctor/compare", label: "Compare Patients", icon: GitCompare },
-  { to: "/appointments", label: "Appointments", icon: Calendar },
+  { to: "/doctor/appointments", label: "Appointments", icon: Calendar },
   { to: "/find-care", label: "Find Care", icon: MapPinned },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
@@ -43,7 +42,7 @@ const PATIENT_NAV_ITEMS: NavItem[] = [
   { to: "/patient/diet", label: "Diet", icon: Utensils },
   { to: "/patient/chat", label: "AI Chat", icon: MessageSquare },
   { to: "/patient/lab-reports", label: "Lab Reports", icon: FileStack },
-  { to: "/appointments", label: "Appointments", icon: Calendar },
+  { to: "/patient/appointments", label: "Appointments", icon: Calendar },
   { to: "/find-care", label: "Find Care", icon: MapPinned },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];

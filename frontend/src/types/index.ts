@@ -165,9 +165,11 @@ export interface AppointmentRecord {
   doctor_id: string;
   patient_name: string;
   doctor_name: string;
-  date_time: string;
+  appointment_date?: string;
+  date_time?: string;
   reason: string;
   status: "requested" | "confirmed" | "completed" | "cancelled";
+  notes?: string;
   created_at: string;
 }
 
@@ -242,6 +244,11 @@ export interface DoctorAnalytics {
   upcoming_appointments: number;
   overall_adherence_rate: string;
   weekly_consultation_velocity: Array<{ day: string; count: number }>;
+  patient_risk_distribution?: Array<{ label: string; count: number; percentage: number; color: string }>;
+  top_chronic_conditions?: Array<{ condition: string; count: number; percentage: number }>;
+  adherence_breakdown?: Array<{ category: string; count: number; percentage: number; color: string }>;
+  age_demographics?: Array<{ group: string; count: number }>;
+  alert_severity_breakdown?: Array<{ severity: string; count: number; color: string }>;
 }
 
 export interface PatientComparisonCard {
@@ -381,4 +388,17 @@ export interface ProfileRecord {
   conditions: string[];
   medications: Array<{ name: string; dosage: string }>;
   emergencyContact?: { name?: string; relation?: string; phone?: string };
+}
+
+export interface TimeSlot {
+  time: string;
+  status: "available" | "busy";
+  appointment_id?: string;
+}
+
+export interface DoctorAvailabilityData {
+  doctor_id: string;
+  doctor_name: string;
+  date: string;
+  slots: TimeSlot[];
 }

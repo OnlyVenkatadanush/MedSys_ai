@@ -1,94 +1,365 @@
-"""Appointment Management Router."""
+"""Appointment Management Router for MedSys AI 2.0.
+
+Implements two-way Patient-Doctor Appointment Lifecycle:
+1. Patient checks Doctor Availability & Schedule Slots (Available vs Busy).
+2. Patient submits Appointment Request (status = 'requested').
+3. Doctor reviews incoming requests in Doctor Appointments Center and Accepts (confirms), Declines, or Completes.
+4. Persists to relational SQLite medsys.db and MongoDB document store with audit logging.
+"""
 
 from datetime import datetime, timezone
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.db import get_db
+from app.db_sqlite import get_sqlite_conn
 from app.models_v2 import AppointmentCreateIn, AppointmentRecord
 from app.services.audit_service import log_audit_event
-from app.services.clerk_auth import AuthenticatedUser, get_current_user
+from app.services.clerk_auth import AuthenticatedUser, get_current_user, require_role
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
 
-@router.get("", response_model=List[AppointmentRecord])
-async def list_appointments(user: AuthenticatedUser = Depends(get_current_user)):
-    """Lists appointments for the authenticated user (patient or doctor)."""
-    db = get_db()
-    query = {"doctor_id": user.user_id} if user.role == "doctor" else {"patient_id": user.user_id}
-    appointments = list(db.appointments.find(query, {"_id": 0}).sort("date_time", 1))
+class TimeSlot(BaseModel):
+    time: str
+    status: str  # "available" or "busy"
+    appointment_id: Optional[str] = None
+
+
+class DoctorAvailabilityOut(BaseModel):
+    doctor_id: str
+    doctor_name: str
+    date: str
+    slots: List[TimeSlot]
+
+
+class AppointmentActionIn(BaseModel):
+    action: str = Field(..., example="confirm")  # confirm, decline, complete, cancel
+    notes: Optional[str] = ""
+
+
+# Default daily schedule slots
+DEFAULT_DAILY_SLOTS = [
+    "09:00 AM",
+    "10:00 AM",
+    "11:30 AM",
+    "02:00 PM",
+    "03:30 PM",
+    "04:30 PM",
+]
+
+
+@router.get("/availability", response_model=DoctorAvailabilityOut)
+async def get_doctor_availability(
+    doctor_id: str = Query("doc_01"),
+    date: str = Query("2026-09-05"),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Returns Doctor's available and booked time slots for a given date so patient can select an available slot."""
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
+    # Get doctor name
+    cursor.execute("SELECT name FROM doctors WHERE id = ?;", (doctor_id,))
+    doc_row = cursor.fetchone()
+    doc_name = doc_row["name"] if doc_row else "Dr. Sarah Smith, MD"
+
+    # Query existing appointments for this doctor on this date
+    cursor.execute("""
+    SELECT id, appointment_date, status FROM appointments
+    WHERE doctor_id = ? AND appointment_date LIKE ? AND status IN ('requested', 'confirmed');
+    """, (doctor_id, f"{date}%"))
     
-    # Seed default appointments if empty
-    if len(appointments) == 0:
-        now = datetime.now(timezone.utc).isoformat()
-        sample_appt = AppointmentRecord(
-            id=f"apt_{uuid.uuid4().hex[:10]}",
-            patient_id="pat_01",
-            doctor_id="doc_01",
-            patient_name="John Doe",
-            doctor_name="Dr. Sarah Smith, MD",
-            date_time="2026-09-05T10:00:00Z",
-            reason="Routine Follow-up & Blood Pressure Check",
-            status="confirmed",
-            created_at=now,
-        )
-        db.appointments.insert_one(sample_appt.model_dump())
-        appointments = [sample_appt]
+    appts = cursor.fetchall()
+    conn.close()
 
-    return appointments
+    booked_times = {}
+    for a in appts:
+        appt_date_str = a["appointment_date"]
+        # extract time if stored like "2026-09-05T10:00:00" or "09:00 AM"
+        for slot in DEFAULT_DAILY_SLOTS:
+            if slot in appt_date_str or (slot.startswith("09") and "09:00" in appt_date_str) or (slot.startswith("10") and "10:00" in appt_date_str):
+                booked_times[slot] = a["id"]
+
+    slots = []
+    for slot in DEFAULT_DAILY_SLOTS:
+        if slot in booked_times:
+            slots.append(TimeSlot(time=slot, status="busy", appointment_id=booked_times[slot]))
+        else:
+            slots.append(TimeSlot(time=slot, status="available"))
+
+    return DoctorAvailabilityOut(
+        doctor_id=doctor_id,
+        doctor_name=doc_name,
+        date=date,
+        slots=slots,
+    )
 
 
-@router.post("", response_model=AppointmentRecord)
-async def create_appointment(
+@router.post("/request", response_model=AppointmentRecord)
+async def request_appointment(
     payload: AppointmentCreateIn,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Requests/books a new appointment."""
-    db = get_db()
-    now = datetime.now(timezone.utc).isoformat()
-    
+    """Patient Endpoint: Submits an appointment request to the doctor."""
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
     patient_id = user.user_id if user.role == "patient" else "pat_01"
-    doctor_id = payload.doctor_id if user.role == "patient" else user.user_id
+    doctor_id = payload.doctor_id or "doc_01"
 
-    appt = AppointmentRecord(
-        id=f"apt_{uuid.uuid4().hex[:10]}",
-        patient_id=patient_id,
-        doctor_id=doctor_id,
-        patient_name=user.full_name if user.role == "patient" else "John Doe",
-        doctor_name="Dr. Sarah Smith, MD",
-        date_time=payload.date_time,
-        reason=payload.reason,
-        status="requested",
-        created_at=now,
-    )
+    # Fetch Patient Name
+    cursor.execute("SELECT name FROM patients WHERE id = ?;", (patient_id,))
+    p_row = cursor.fetchone()
+    patient_name = p_row["name"] if p_row else user.full_name
 
-    db.appointments.insert_one(appt.model_dump())
+    # Fetch Doctor Name
+    cursor.execute("SELECT name FROM doctors WHERE id = ?;", (doctor_id,))
+    d_row = cursor.fetchone()
+    doctor_name = d_row["name"] if d_row else "Dr. Sarah Smith, MD"
+
+    appt_id = f"apt_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    cursor.execute("""
+    INSERT INTO appointments (
+        id, patient_id, doctor_id, patient_name, doctor_name, appointment_date, reason, status, notes, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?);
+    """, (
+        appt_id,
+        patient_id,
+        doctor_id,
+        patient_name,
+        doctor_name,
+        payload.appointment_date,
+        payload.reason,
+        payload.notes or "",
+        now,
+    ))
+
+    conn.commit()
+    conn.close()
+
+    # Sync to MongoDB for AI store
+    try:
+        db = get_db()
+        db.appointments.insert_one({
+            "id": appt_id,
+            "patient_id": patient_id,
+            "doctor_id": doctor_id,
+            "patient_name": patient_name,
+            "doctor_name": doctor_name,
+            "appointment_date": payload.appointment_date,
+            "reason": payload.reason,
+            "status": "requested",
+            "notes": payload.notes or "",
+            "created_at": now,
+        })
+    except Exception as e:
+        print(f"[Mongo Sync Warning] {e}")
 
     log_audit_event(
         actor_id=user.user_id,
         actor_role=user.role,
-        action="CREATE_APPOINTMENT",
+        action="REQUEST_APPOINTMENT",
         target_patient_id=patient_id,
-        resource=f"/api/appointments/{appt.id}",
+        resource=f"/api/appointments/{appt_id}",
+        details=f"Patient requested appointment with {doctor_name} for {payload.appointment_date}",
     )
 
-    return appt
+    return AppointmentRecord(
+        id=appt_id,
+        patient_id=patient_id,
+        doctor_id=doctor_id,
+        patient_name=patient_name,
+        doctor_name=doctor_name,
+        appointment_date=payload.appointment_date,
+        reason=payload.reason,
+        status="requested",
+        notes=payload.notes or "",
+        created_at=now,
+    )
 
 
-@router.post("/{appointment_id}/status", response_model=AppointmentRecord)
-async def update_appointment_status(
-    appointment_id: str,
-    status: str,
+@router.get("/doctor-queue", response_model=List[AppointmentRecord])
+async def list_doctor_appointments(
+    status_filter: Optional[str] = Query(None),
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """Doctor Endpoint: Lists incoming appointment requests & scheduled appointments for approval."""
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
+    if status_filter:
+        cursor.execute("""
+        SELECT * FROM appointments WHERE doctor_id = ? AND status = ? ORDER BY created_at DESC;
+        """, (user.user_id, status_filter))
+    else:
+        cursor.execute("""
+        SELECT * FROM appointments WHERE doctor_id = ? ORDER BY created_at DESC;
+        """, (user.user_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        # Seed default sample appointments if none exist
+        now = datetime.now(timezone.utc).isoformat()
+        return [
+            AppointmentRecord(
+                id="apt_sample_01",
+                patient_id="pat_01",
+                doctor_id=user.user_id,
+                patient_name="John Doe",
+                doctor_name=user.full_name,
+                appointment_date="2026-09-05T10:00:00Z",
+                reason="Blood Pressure Routine Follow-up & Medication Renewal",
+                status="requested",
+                notes="Patient requested morning slot.",
+                created_at=now,
+            ),
+            AppointmentRecord(
+                id="apt_sample_02",
+                patient_id="pat_02",
+                doctor_id=user.user_id,
+                patient_name="Sarah Connor",
+                doctor_name=user.full_name,
+                appointment_date="2026-09-06T14:30:00Z",
+                reason="Asthma Symptom Evaluation & Inhaler Review",
+                status="confirmed",
+                notes="Confirmed by Dr. Sarah Smith.",
+                created_at=now,
+            ),
+        ]
+
+    return [
+        AppointmentRecord(
+            id=r["id"],
+            patient_id=r["patient_id"],
+            doctor_id=r["doctor_id"],
+            patient_name=r["patient_name"] or "Patient Record",
+            doctor_name=r["doctor_name"] or user.full_name,
+            appointment_date=r["appointment_date"],
+            reason=r["reason"] or "Intake",
+            status=r["status"],
+            notes=r["notes"] or "",
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+@router.get("/patient-queue", response_model=List[AppointmentRecord])
+async def list_patient_appointments(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Updates appointment status (confirmed, completed, cancelled)."""
-    db = get_db()
-    appt = db.appointments.find_one({"id": appointment_id}, {"_id": 0})
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
+    """Patient Endpoint: Lists all appointment requests & confirmed bookings for current patient."""
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
 
-    db.appointments.update_one({"id": appointment_id}, {"$set": {"status": status}})
-    appt["status"] = status
-    return AppointmentRecord(**appt)
+    patient_id = user.user_id if user.role == "patient" else "pat_01"
+
+    cursor.execute("""
+    SELECT * FROM appointments WHERE patient_id = ? ORDER BY created_at DESC;
+    """, (patient_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        now = datetime.now(timezone.utc).isoformat()
+        return [
+            AppointmentRecord(
+                id="apt_sample_01",
+                patient_id=patient_id,
+                doctor_id="doc_01",
+                patient_name=user.full_name,
+                doctor_name="Dr. Sarah Smith, MD",
+                appointment_date="2026-09-05T10:00:00Z",
+                reason="Routine Follow-up & Blood Pressure Check",
+                status="requested",
+                notes="Awaiting doctor confirmation.",
+                created_at=now,
+            )
+        ]
+
+    return [
+        AppointmentRecord(
+            id=r["id"],
+            patient_id=r["patient_id"],
+            doctor_id=r["doctor_id"],
+            patient_name=r["patient_name"] or user.full_name,
+            doctor_name=r["doctor_name"] or "Dr. Sarah Smith, MD",
+            appointment_date=r["appointment_date"],
+            reason=r["reason"] or "Clinical Consultation",
+            status=r["status"],
+            notes=r["notes"] or "",
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+@router.post("/{appointment_id}/action", response_model=AppointmentRecord)
+async def process_appointment_action(
+    appointment_id: str,
+    payload: AppointmentActionIn,
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """Doctor Endpoint: Doctor accepts (confirms), declines, or completes an appointment request."""
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM appointments WHERE id = ?;", (appointment_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Appointment record not found.")
+
+    new_status = row["status"]
+    if payload.action == "confirm":
+        new_status = "confirmed"
+    elif payload.action in ("decline", "cancel"):
+        new_status = "cancelled"
+    elif payload.action == "complete":
+        new_status = "completed"
+
+    cursor.execute("""
+    UPDATE appointments SET status = ?, notes = ? WHERE id = ?;
+    """, (new_status, payload.notes or row["notes"] or "", appointment_id))
+
+    conn.commit()
+    cursor.execute("SELECT * FROM appointments WHERE id = ?;", (appointment_id,))
+    updated_row = cursor.fetchone()
+    conn.close()
+
+    # Also update Mongo
+    try:
+        db = get_db()
+        db.appointments.update_one({"id": appointment_id}, {"$set": {"status": new_status, "notes": payload.notes or ""}})
+    except Exception as e:
+        print(f"[Mongo Update Warning] {e}")
+
+    log_audit_event(
+        actor_id=user.user_id,
+        actor_role="doctor",
+        action=f"APPOINTMENT_{payload.action.upper()}",
+        target_patient_id=updated_row["patient_id"],
+        resource=f"/api/appointments/{appointment_id}",
+        details=f"Doctor {user.full_name} set appointment status to {new_status}",
+    )
+
+    return AppointmentRecord(
+        id=updated_row["id"],
+        patient_id=updated_row["patient_id"],
+        doctor_id=updated_row["doctor_id"],
+        patient_name=updated_row["patient_name"],
+        doctor_name=updated_row["doctor_name"],
+        appointment_date=updated_row["appointment_date"],
+        reason=updated_row["reason"],
+        status=updated_row["status"],
+        notes=updated_row["notes"] or "",
+        created_at=updated_row["created_at"],
+    )

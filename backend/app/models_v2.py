@@ -115,12 +115,10 @@ class PatientActivationIn(BaseModel):
 # ==================== APPOINTMENT SCHEMAS ====================
 
 class AppointmentCreateIn(BaseModel):
-    patient_id: Optional[str] = "pat_01"
     doctor_id: Optional[str] = "doc_01"
-    patient_name: Optional[str] = "John Doe"
-    doctor_name: Optional[str] = "Dr. Sarah Smith"
     appointment_date: str = Field(..., example="2026-09-05T10:00:00Z")
     reason: str = Field(..., example="Routine Follow-up & Blood Pressure Check")
+    notes: Optional[str] = ""
 
 
 class AppointmentRecord(BaseModel):
@@ -129,9 +127,10 @@ class AppointmentRecord(BaseModel):
     doctor_id: str
     patient_name: str
     doctor_name: str
-    date_time: str
+    appointment_date: str
     reason: str
     status: str
+    notes: Optional[str] = ""
     created_at: str
 
 
@@ -261,6 +260,11 @@ class DoctorAnalytics(BaseModel):
     upcoming_appointments: int
     overall_adherence_rate: str
     weekly_consultation_velocity: List[Dict[str, Any]]
+    patient_risk_distribution: List[Dict[str, Any]] = []
+    top_chronic_conditions: List[Dict[str, Any]] = []
+    adherence_breakdown: List[Dict[str, Any]] = []
+    age_demographics: List[Dict[str, Any]] = []
+    alert_severity_breakdown: List[Dict[str, Any]] = []
 
 
 class PatientComparisonCard(BaseModel):
