@@ -44,7 +44,7 @@ export function FacilityCard({ facility, selected, onSelect, userLocation }: Fac
           <p className="mt-0.5 text-[12px] text-stone">{facility.address}</p>
         </div>
         <span className="shrink-0 font-mono text-[13px] text-ink">
-          {facility.distanceKm.toFixed(1)} km
+          {(facility.distanceKm ?? facility.distance_km ?? 0).toFixed(1)} km
         </span>
       </div>
 

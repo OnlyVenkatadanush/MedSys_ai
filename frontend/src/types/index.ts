@@ -125,6 +125,40 @@ export interface LabReportRecord {
   uploaded_at: string;
 }
 
+export interface MetricHistoryPoint {
+  date: string;
+  value: number;
+  is_abnormal: boolean;
+}
+
+export interface LabMetricTrend {
+  metric_name: string;
+  unit: string;
+  history: MetricHistoryPoint[];
+  trend_direction: "up" | "down" | "flat";
+}
+
+export interface PreConsultationBrief {
+  patient_id: string;
+  patient_name: string;
+  age: number;
+  last_visit_date: string;
+  main_concerns: string[];
+  trend_summary: string;
+  suggested_discussion_topics: string[];
+}
+
+export interface PatientClarificationMessage {
+  id: string;
+  session_id?: string;
+  sender?: string;
+  role?: string;
+  message?: string;
+  content?: string;
+  is_red_flag?: boolean;
+  created_at: string;
+}
+
 export interface AppointmentRecord {
   id: string;
   patient_id: string;
@@ -228,7 +262,7 @@ export interface MultiPatientCompareResult {
   comparison_summary: string;
 }
 
-export type ChatSourceKind = "doc" | "web" | "system" | "report" | "consultation";
+export type ChatSourceKind = "doc" | "web" | "system" | "report" | "consultation" | "consult_prescription" | "prescription";
 
 export interface ChatSourceDetail {
   title?: string;
@@ -248,6 +282,7 @@ export interface ChatSource {
   title?: string;
   uploadedAt?: string;
   excerpt?: string;
+  url?: string;
   details?: ChatSourceDetail;
 }
 
@@ -258,6 +293,8 @@ export interface ChatMessage {
   role?: "user" | "assistant";
   message?: string;
   content?: string;
+  quickOptions?: string[];
+  isRedFlag?: boolean;
   sources?: ChatSource[];
   created_at?: string;
   createdAt?: string;
@@ -280,37 +317,61 @@ export interface Facility {
   name: string;
   type: FacilityType;
   address: string;
-  phone: string;
+  phone?: string;
   specialty?: string;
-  lat?: number;
-  lng?: number;
+  lat: number;
+  lng: number;
   distance_km?: number;
   distanceKm?: number;
+  openNow?: boolean;
 }
 
 export interface HomeSnapshot {
-  user_name: string;
-  role: string;
-  upcoming_appointments_count: number;
-  active_alerts_count: number;
-  recent_activities: string[];
-  status?: string;
-  statusNote?: string;
-  environment?: string;
-  tip?: string;
-  generalTip?: string;
+  user_name?: string;
+  role?: string;
+  upcoming_appointments_count?: number;
+  active_alerts_count?: number;
+  recent_activities?: string[];
+  status?: any;
+  statusNote?: any;
+  environment?: any;
+  tip?: any;
+  generalTip?: any;
   graph?: any;
 }
 
+export interface EnvironmentSnapshot {
+  locationName: string;
+  tempC: number;
+  condition: string;
+  humidityPct: number;
+  aqi: number;
+  aqiCategory: string;
+  pollutants: Array<{ label: string; value: number; unit: string }>;
+  updatedAt: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: any[];
+  edges: any[];
+}
+
+export interface SystemStatus {
+  status: string;
+  message: string;
+}
+
 export interface ModelStatus {
-  status: "online" | "offline" | "degraded";
-  active_model: string;
+  status?: "online" | "offline" | "degraded";
+  active_model?: string;
   provider?: string;
+  model?: string;
+  reachable?: boolean;
 }
 
 export interface ProfileRecord {
-  id: string;
-  userId: string;
+  id?: string;
+  userId?: string;
   fullName: string;
   age?: number;
   weightKg?: number;
@@ -319,5 +380,5 @@ export interface ProfileRecord {
   bloodGroup?: string;
   conditions: string[];
   medications: Array<{ name: string; dosage: string }>;
-  emergencyContact?: { name: string; relation: string; phone: string };
+  emergencyContact?: { name?: string; relation?: string; phone?: string };
 }

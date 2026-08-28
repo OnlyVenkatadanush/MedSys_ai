@@ -3,12 +3,12 @@ import type { SystemStatus } from "@/types";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface StatusBannerProps {
-  status: SystemStatus;
+  status: any;
   note: string;
 }
 
 const STATUS_STYLES: Record<
-  SystemStatus,
+  string,
   { label: string; border: string; textClass: string; pulse: boolean }
 > = {
   stable: { label: "Stable", border: "#2F6E68", textClass: "text-[#8FD4C9]", pulse: false },
@@ -18,7 +18,7 @@ const STATUS_STYLES: Record<
 
 export function StatusBanner({ status, note }: StatusBannerProps) {
   const reduced = useReducedMotion();
-  const style = STATUS_STYLES[status];
+  const style = STATUS_STYLES[typeof status === "string" ? status : "stable"] || STATUS_STYLES.stable;
   const animate = style.pulse && !reduced;
 
   return (

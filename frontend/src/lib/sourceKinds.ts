@@ -1,4 +1,4 @@
-import { Stethoscope, ClipboardPlus, Pill, FileText, Globe } from "lucide-react";
+import { Stethoscope, ClipboardPlus, Pill, FileText, Globe, FileCheck, Cpu } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ChatSourceKind } from "@/types";
 
@@ -8,6 +8,8 @@ export const KIND_ICON: Record<ChatSourceKind, LucideIcon> = {
   prescription: Pill,
   report: FileText,
   web: Globe,
+  doc: FileCheck,
+  system: Cpu,
 };
 
 export const KIND_LABEL: Record<ChatSourceKind, string> = {
@@ -16,4 +18,6 @@ export const KIND_LABEL: Record<ChatSourceKind, string> = {
   prescription: "Prescription",
   report: "Report",
   web: "Search result",
+  doc: "Document",
+  system: "System Assistant",
 };
