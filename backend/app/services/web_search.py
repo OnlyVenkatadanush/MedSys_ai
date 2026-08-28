@@ -7,9 +7,15 @@ choosing the web_search tool (see model_router.decide_web_search).
 """
 
 import asyncio
-
 import httpx
-from ddgs import DDGS
+
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        DDGS = None
 
 from app.config import settings
 from app.services import rag, supermemory_client
@@ -20,6 +26,8 @@ MAX_SCRAPED = 3
 
 
 def _ddg_search(query: str, max_results: int) -> list[dict]:
+    if DDGS is None:
+        return []
     try:
         return DDGS().text(query, max_results=max_results)
     except Exception:

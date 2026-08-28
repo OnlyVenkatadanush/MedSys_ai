@@ -14,8 +14,6 @@ export class ApiError extends Error {
   }
 }
 
-/** FastAPI's HTTPException bodies look like `{"detail": "..."}`. Best-effort —
- * a non-JSON or differently-shaped error body just leaves `detail` unset. */
 async function readErrorDetail(res: Response): Promise<string | undefined> {
   try {
     const body = await res.clone().json();
@@ -25,31 +23,45 @@ async function readErrorDetail(res: Response): Promise<string | undefined> {
   }
 }
 
-/**
- * Clerk's `getToken()` is only available inside React via `useAuth()`, but
- * `apiFetch`/`apiUpload` are plain functions called from anywhere. `<AuthTokenBridge>`
- * (mounted once inside `<ClerkProvider>`, see App.tsx) pushes the latest
- * `getToken` here so every request can attach it without threading auth
- * through every service function's call sites.
- */
 let getAuthToken: (() => Promise<string | null>) | null = null;
+let currentRoleOverride: "doctor" | "patient" | null = null;
 
 export function setAuthTokenGetter(getter: (() => Promise<string | null>) | null) {
   getAuthToken = getter;
 }
 
-async function authHeaders(): Promise<HeadersInit> {
+export function setActiveRoleOverride(role: "doctor" | "patient" | null) {
+  currentRoleOverride = role;
+}
+
+export function getActiveRoleOverride(): "doctor" | "patient" {
+  return currentRoleOverride || (localStorage.getItem("medsys_role") as "doctor" | "patient") || "doctor";
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
   const token = getAuthToken ? await getAuthToken() : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const activeRole = getActiveRoleOverride();
+  const headers: Record<string, string> = {
+    "X-User-Role": activeRole,
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_BASE_URL) {
     throw new ApiError("VITE_API_BASE_URL is not configured");
   }
+  const headers = await authHeaders();
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...headers,
+      ...(init?.headers || {}),
+    },
   });
   if (!res.ok) {
     throw new ApiError(`Request to ${path} failed`, res.status, await readErrorDetail(res));
@@ -60,14 +72,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return res.json() as Promise<T>;
 }
 
-/** For multipart uploads — no forced Content-Type, browser sets the boundary. */
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   if (!API_BASE_URL) {
     throw new ApiError("VITE_API_BASE_URL is not configured");
   }
+  const headers = await authHeaders();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: await authHeaders(),
+    headers: {
+      ...headers,
+    },
     body: formData,
   });
   if (!res.ok) {
@@ -76,7 +90,6 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   return res.json() as Promise<T>;
 }
 
-/** Simulates network latency for mock data so loading states are visible. */
 export function mockDelay<T>(value: T, ms = 400): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }

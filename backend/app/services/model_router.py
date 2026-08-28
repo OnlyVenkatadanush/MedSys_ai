@@ -667,3 +667,13 @@ async def extract_chat_entities(text: str) -> dict:
         and _is_real_medication_name(m["name"].strip())
     ]
     return {"symptoms": symptoms, "medications": medications}
+
+
+async def generate_completion(messages: list[dict], system_prompt: str | None = None) -> str:
+    """Convenience completion router for MedSys AI clinical and patient services."""
+    user_content = "\n".join([m.get("content", "") for m in messages if m.get("role") == "user"])
+    try:
+        return await complete_gemini(user=user_content, system=system_prompt)
+    except Exception:
+        return await _complete(user=user_content, system=system_prompt)
+
