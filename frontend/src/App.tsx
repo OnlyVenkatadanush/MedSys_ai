@@ -7,9 +7,12 @@ import Profile from "@/pages/Profile";
 
 import { SelectRolePage } from "@/pages/auth/SelectRolePage";
 import { RoleLoginPage } from "@/pages/auth/RoleLoginPage";
+import { DoctorRegistrationPage } from "@/pages/auth/DoctorRegistration";
+import { PatientActivationPage } from "@/pages/auth/PatientActivationPage";
 
 import { DoctorCommandCenter } from "@/pages/doctor/DoctorCommandCenter";
 import { MyPatients } from "@/pages/doctor/MyPatients";
+import { AddPatientWizard } from "@/pages/doctor/AddPatientWizard";
 import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
 import { ClinicalCopilot } from "@/pages/doctor/ClinicalCopilot";
 import { DoctorAnalyticsPage } from "@/pages/doctor/DoctorAnalytics";
@@ -27,9 +30,12 @@ export default function App() {
     <>
       <AuthTokenBridge />
       <Routes>
-        {/* Public Landing & Authentication Selection */}
+        {/* Public Landing, Role Selection & Password Activation */}
         <Route path="/" element={<Landing />} />
         <Route path="/select-role" element={<SelectRolePage />} />
+        <Route path="/doctor/register" element={<DoctorRegistrationPage />} />
+        <Route path="/activate-account" element={<PatientActivationPage />} />
+
         <Route path="/sign-in" element={<RoleLoginPage />} />
         <Route path="/sign-in/:role" element={<RoleLoginPage />} />
         <Route path="/sign-up" element={<RoleLoginPage />} />
@@ -42,6 +48,7 @@ export default function App() {
           {/* Doctor Portal Routes */}
           <Route path="/doctor/dashboard" element={<DoctorCommandCenter />} />
           <Route path="/doctor/patients" element={<MyPatients />} />
+          <Route path="/doctor/add-patient" element={<AddPatientWizard />} />
           <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />
           <Route path="/doctor/copilot" element={<ClinicalCopilot />} />
           <Route path="/doctor/analytics" element={<DoctorAnalyticsPage />} />

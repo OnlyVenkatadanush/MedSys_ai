@@ -235,3 +235,72 @@ export interface MultiPatientCompareResult {
   patients: PatientComparisonCard[];
   comparison_summary: string;
 }
+
+export type ChatSourceKind = "doc" | "web" | "system";
+
+export interface ChatSourceDetail {
+  title?: string;
+  url?: string;
+  snippet?: string;
+}
+
+export interface ChatSource {
+  kind: ChatSourceKind;
+  id: string;
+  label: string;
+  details?: ChatSourceDetail;
+}
+
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  sender: "user" | "assistant";
+  message: string;
+  sources?: ChatSource[];
+  created_at: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type FacilityType = "hospital" | "clinic" | "pharmacy";
+
+export interface Facility {
+  id: string;
+  name: string;
+  type: FacilityType;
+  address: string;
+  phone: string;
+  distance_km?: number;
+}
+
+export interface HomeSnapshot {
+  user_name: string;
+  role: string;
+  upcoming_appointments_count: number;
+  active_alerts_count: number;
+  recent_activities: string[];
+}
+
+export interface ModelStatus {
+  status: "online" | "offline" | "degraded";
+  active_model: string;
+}
+
+export interface ProfileRecord {
+  id: string;
+  userId: string;
+  fullName: string;
+  age?: number;
+  weightKg?: number;
+  heightCm?: number;
+  bloodGroup?: string;
+  conditions: string[];
+  medications: Array<{ name: string; dosage: string }>;
+  emergencyContact?: { name: string; relation: string; phone: string };
+}
+

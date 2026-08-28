@@ -1,6 +1,6 @@
 """SQLite Database Layer: Native relational SQLite storage for MedSys AI 2.0.
 
-Implements all 19 normalized tables, foreign keys, indices, and initial seeding.
+Implements all 20 normalized tables including patient_invitations, foreign keys, and indices.
 Persists cleanly to backend/medsys.db.
 """
 
@@ -21,7 +21,7 @@ def get_sqlite_conn():
 
 
 def init_sqlite_db():
-    """Creates all 19 relational tables and populates initial seed data if empty."""
+    """Creates all relational tables and populates initial seed data if empty."""
     conn = get_sqlite_conn()
     cursor = conn.cursor()
 
@@ -34,6 +34,8 @@ def init_sqlite_db():
         phone TEXT,
         specialization TEXT,
         license_number TEXT,
+        hospital_name TEXT,
+        experience_years INTEGER,
         created_at TEXT NOT NULL,
         is_active INTEGER DEFAULT 1
     );
@@ -43,13 +45,20 @@ def init_sqlite_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS patients (
         id TEXT PRIMARY KEY,
+        patient_id_code TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         dob TEXT,
+        age INTEGER,
         gender TEXT,
         blood_group TEXT,
+        height_cm REAL,
+        weight_kg REAL,
         phone TEXT,
-        email TEXT,
+        email TEXT UNIQUE NOT NULL,
         address TEXT,
+        emergency_contact_name TEXT,
+        emergency_contact_phone TEXT,
+        account_state TEXT DEFAULT 'PENDING_ACTIVATION',
         created_at TEXT NOT NULL,
         is_active INTEGER DEFAULT 1
     );
@@ -68,7 +77,21 @@ def init_sqlite_db():
     );
     """)
 
-    # 4. patient_conditions
+    # 4. patient_invitations
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS patient_invitations (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        invitation_token TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(patient_id) REFERENCES patients(id)
+    );
+    """)
+
+    # 5. patient_conditions
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS patient_conditions (
         id TEXT PRIMARY KEY,
@@ -81,7 +104,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 5. allergies
+    # 6. allergies
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS allergies (
         id TEXT PRIMARY KEY,
@@ -94,7 +117,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 6. consultations
+    # 7. consultations
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS consultations (
         id TEXT PRIMARY KEY,
@@ -117,7 +140,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 7. medications
+    # 8. medications
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS medications (
         id TEXT PRIMARY KEY,
@@ -127,7 +150,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 8. prescriptions
+    # 9. prescriptions
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS prescriptions (
         id TEXT PRIMARY KEY,
@@ -146,7 +169,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 9. medication_logs
+    # 10. medication_logs
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS medication_logs (
         id TEXT PRIMARY KEY,
@@ -162,7 +185,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 10. vitals
+    # 11. vitals
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS vitals (
         id TEXT PRIMARY KEY,
@@ -178,7 +201,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 11. lab_reports
+    # 12. lab_reports
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS lab_reports (
         id TEXT PRIMARY KEY,
@@ -194,7 +217,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 12. lab_metrics
+    # 13. lab_metrics
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS lab_metrics (
         id TEXT PRIMARY KEY,
@@ -212,7 +235,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 13. meal_logs
+    # 14. meal_logs
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS meal_logs (
         id TEXT PRIMARY KEY,
@@ -225,7 +248,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 14. appointments
+    # 15. appointments
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS appointments (
         id TEXT PRIMARY KEY,
@@ -243,7 +266,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 15. ai_chat_sessions
+    # 16. ai_chat_sessions
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ai_chat_sessions (
         id TEXT PRIMARY KEY,
@@ -256,7 +279,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 16. ai_chat_messages
+    # 17. ai_chat_messages
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ai_chat_messages (
         id TEXT PRIMARY KEY,
@@ -268,7 +291,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 17. alerts
+    # 18. alerts
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS alerts (
         id TEXT PRIMARY KEY,
@@ -286,7 +309,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 18. audit_logs
+    # 19. audit_logs
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS audit_logs (
         id TEXT PRIMARY KEY,
@@ -300,7 +323,7 @@ def init_sqlite_db():
     );
     """)
 
-    # 19. patient_snapshots
+    # 20. patient_snapshots
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS patient_snapshots (
         id TEXT PRIMARY KEY,
@@ -324,18 +347,18 @@ def init_sqlite_db():
         
         # Insert Doctor
         cursor.execute("""
-        INSERT INTO doctors (id, name, email, phone, specialization, license_number, created_at)
-        VALUES ('doc_01', 'Dr. Sarah Smith', 'dr.smith@medsys.ai', '+1-555-0100', 'Cardiology & Internal Medicine', 'MD-994821', ?);
+        INSERT INTO doctors (id, name, email, phone, specialization, license_number, hospital_name, experience_years, created_at)
+        VALUES ('doc_01', 'Dr. Sarah Smith', 'dr.smith@medsys.ai', '+1-555-0100', 'Cardiology & Internal Medicine', 'MD-994821', 'St. Jude Medical Center', 12, ?);
         """, (now,))
 
         # Insert Patients
         cursor.executemany("""
-        INSERT INTO patients (id, name, dob, gender, blood_group, phone, email, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO patients (id, patient_id_code, name, dob, age, gender, blood_group, height_cm, weight_kg, phone, email, emergency_contact_name, emergency_contact_phone, account_state, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?);
         """, [
-            ("pat_01", "John Doe", "1984-05-12", "Male", "O+", "+1-555-0123", "john.doe@example.com", now),
-            ("pat_02", "Emma Watson", "1997-09-24", "Female", "A+", "+1-555-0144", "emma.watson@example.com", now),
-            ("pat_03", "Robert Chen", "1965-02-18", "Male", "B+", "+1-555-0188", "robert.chen@example.com", now),
+            ("pat_01", "PAT-000124", "John Doe", "1984-05-12", 42, "Male", "O+", 178.0, 75.0, "+1-555-0123", "john.doe@example.com", "Jane Doe", "+1-555-0199", now),
+            ("pat_02", "PAT-000125", "Emma Watson", "1997-09-24", 29, "Female", "A+", 165.0, 58.0, "+1-555-0144", "emma.watson@example.com", "David Watson", "+1-555-0188", now),
+            ("pat_03", "PAT-000126", "Robert Chen", "1965-02-18", 61, "Male", "B+", 172.0, 82.0, "+1-555-0188", "robert.chen@example.com", "Lisa Chen", "+1-555-0177", now),
         ])
 
         # Insert Assignments
@@ -348,8 +371,18 @@ def init_sqlite_db():
             ("asgn_03", "doc_01", "pat_03", now),
         ])
 
+        # Insert Invitations
+        cursor.executemany("""
+        INSERT INTO patient_invitations (id, patient_id, email, invitation_token, expires_at, status, created_at)
+        VALUES (?, ?, ?, ?, '2026-12-31T23:59:59Z', 'activated', ?);
+        """, [
+            ("inv_01", "pat_01", "john.doe@example.com", "token_pat01_active", now),
+            ("inv_02", "pat_02", "emma.watson@example.com", "token_pat02_active", now),
+            ("inv_03", "pat_03", "robert.chen@example.com", "token_pat03_active", now),
+        ])
+
         # Insert Patient Conditions & Allergies
-        cursor.execute("INSERT INTO patient_conditions VALUES ('cond_01', 'pat_01', 'Mild Hypertension', '2025-01-10', 'active', 'Controlled with medication');")
+        cursor.execute("INSERT INTO patient_conditions VALUES ('cond_01', 'pat_01', 'Mild Hypertension', '2025-01-10', 'active', 'Controlled with Lisinopril 10mg');")
         cursor.execute("INSERT INTO patient_conditions VALUES ('cond_02', 'pat_01', 'Early Pre-diabetes', '2025-06-15', 'active', 'Dietary tracking');")
         cursor.execute("INSERT INTO allergies VALUES ('alg_01', 'pat_01', 'Penicillin', 'Skin rash, anaphylaxis warning', 'severe', 'Avoid all beta-lactams');")
 
@@ -358,8 +391,8 @@ def init_sqlite_db():
 
         # Insert Prescriptions
         cursor.executemany("""
-        INSERT INTO prescriptions (id, consultation_id, patient_id, doctor_id, medication_name, dosage, frequency, duration_days, instructions, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO prescriptions (id, consultation_id, patient_id, doctor_id, medication_name, dosage, frequency, duration_days, instructions, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?);
         """, [
             ("rx_01", None, "pat_01", "doc_01", "Lisinopril", "10 mg", "Once daily in morning", 30, "Take with water", now),
             ("rx_02", None, "pat_01", "doc_01", "Metformin", "500 mg", "Twice daily with meals", 30, "Take with meals", now),
@@ -388,8 +421,8 @@ def init_sqlite_db():
 
         # Insert Appointments
         cursor.executemany("""
-        INSERT INTO appointments (id, patient_id, doctor_id, patient_name, doctor_name, appointment_date, reason, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?);
+        INSERT INTO appointments (id, patient_id, doctor_id, patient_name, doctor_name, appointment_date, reason, status, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', NULL, ?);
         """, [
             ("apt_01", "pat_01", "doc_01", "John Doe", "Dr. Sarah Smith", "2026-08-28T10:00:00Z", "Hypertension Follow-up & Lab Review", now),
             ("apt_02", "pat_02", "doc_01", "Emma Watson", "Dr. Sarah Smith", "2026-08-28T11:30:00Z", "Routine Consultation & Vitals Check", now),

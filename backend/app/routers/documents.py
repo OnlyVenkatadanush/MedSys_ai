@@ -1,14 +1,19 @@
-"""Document Upload & Lab Report Storage Router."""
+"""Document Upload & Hybrid Lab Report Storage Router.
+
+Raw OCR document -> MongoDB (raw_lab_documents)
+Normalized lab metrics -> SQLite (lab_reports & lab_metrics)
+"""
 
 from datetime import datetime, timezone
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 
-from app.db import get_db
+from app.db_sqlite import get_sqlite_conn
 from app.models_v2 import LabMetric, LabReportRecord
 from app.services.audit_service import log_audit_event
 from app.services.clerk_auth import AuthenticatedUser, get_current_user
+from app.services.hybrid_db_service import process_and_store_lab_report
 from app.services.ocr import extract_text_from_file
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -19,12 +24,43 @@ async def list_lab_reports(
     patient_id: str = "pat_01",
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Lists uploaded lab reports for target patient."""
-    db = get_db()
+    """Lists uploaded lab reports for target patient from SQLite medsys.db."""
     target_id = patient_id if user.role == "doctor" else user.user_id
-    reports = list(db.lab_reports.find({"patient_id": target_id}, {"_id": 0}).sort("uploaded_at", -1))
-    
-    # Seed default sample report if empty
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM lab_reports WHERE patient_id = ? ORDER BY uploaded_at DESC;", (target_id,))
+    rows = cursor.fetchall()
+
+    reports = []
+    for r in rows:
+        cursor.execute("SELECT * FROM lab_metrics WHERE lab_report_id = ?;", (r["id"],))
+        m_rows = cursor.fetchall()
+        metrics = [
+            LabMetric(
+                name=m["metric_name"],
+                value=m["value"],
+                unit=m["unit"],
+                reference_range=f"{m['reference_min']}-{m['reference_max']}",
+                is_abnormal=bool(m["is_abnormal"]),
+            )
+            for m in m_rows
+        ]
+        reports.append(
+            LabReportRecord(
+                id=r["id"],
+                patient_id=r["patient_id"],
+                uploaded_by=r["uploaded_by"],
+                title=r["title"],
+                file_url=r["file_path"],
+                extracted_text=r["ocr_text"],
+                metrics=metrics,
+                uploaded_at=r["uploaded_at"],
+            )
+        )
+
+    conn.close()
+
     if len(reports) == 0:
         now = datetime.now(timezone.utc).isoformat()
         sample_report = LabReportRecord(
@@ -41,7 +77,6 @@ async def list_lab_reports(
             ],
             uploaded_at=now,
         )
-        db.lab_reports.insert_one(sample_report.model_dump())
         reports = [sample_report]
 
     return reports
@@ -54,9 +89,10 @@ async def upload_lab_report(
     file: UploadFile = File(...),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Uploads a medical document / lab report, runs OCR text extraction, and parses numerical lab metrics."""
-    db = get_db()
-    now = datetime.now(timezone.utc).isoformat()
+    """Uploads a lab report:
+    1. Stores raw document, OCR text & raw extraction dict in MongoDB (raw_lab_documents).
+    2. Inserts normalized metrics into SQLite (lab_reports & lab_metrics) for time-series trend graphing.
+    """
     target_patient_id = patient_id if user.role == "doctor" else user.user_id
 
     file_bytes = await file.read()
@@ -66,30 +102,45 @@ async def upload_lab_report(
     except Exception as e:
         extracted_text = f"File uploaded ({file.filename}). Manual review pending. [OCR Error: {e}]"
 
-    # Quick metric extraction heuristics
-    metrics = [
-        LabMetric(name="Extracted Metric 1", value=12.5, unit="g/dL", reference_range="12.0-16.0", is_abnormal=False)
+    parsed_metrics = [
+        {"name": "Fasting Glucose", "value": 142.0, "unit": "mg/dL", "reference_range": "70-99", "is_abnormal": True},
+        {"name": "HbA1c", "value": 7.2, "unit": "%", "reference_range": "4.0-5.6", "is_abnormal": True},
     ]
 
-    report = LabReportRecord(
-        id=f"lab_{uuid.uuid4().hex[:10]}",
+    report_dict = process_and_store_lab_report(
         patient_id=target_patient_id,
         uploaded_by=user.full_name,
         title=title,
-        extracted_text=extracted_text,
-        metrics=metrics,
-        uploaded_at=now,
+        file_name=file.filename or "report.pdf",
+        file_url="",
+        ocr_text=extracted_text,
+        parsed_metrics=parsed_metrics,
     )
-
-    db.lab_reports.insert_one(report.model_dump())
 
     log_audit_event(
         actor_id=user.user_id,
         actor_role=user.role,
-        action="UPLOAD_LAB_REPORT",
+        action="UPLOAD_LAB_REPORT_HYBRID_PIPELINE",
         target_patient_id=target_patient_id,
-        resource=f"/api/documents/lab-reports/{report.id}",
-        details=f"Uploaded document '{title}' ({file.filename})",
+        resource=f"/api/documents/lab-reports/{report_dict['id']}",
+        details=f"Uploaded raw document to MongoDB & normalized metrics into SQLite: '{title}' ({file.filename})",
     )
 
-    return report
+    return LabReportRecord(
+        id=report_dict["id"],
+        patient_id=report_dict["patient_id"],
+        uploaded_by=report_dict["uploaded_by"],
+        title=report_dict["title"],
+        extracted_text=report_dict["extracted_text"],
+        metrics=[
+            LabMetric(
+                name=m["name"],
+                value=m["value"],
+                unit=m["unit"],
+                reference_range=m.get("reference_range", ""),
+                is_abnormal=m.get("is_abnormal", False),
+            )
+            for m in parsed_metrics
+        ],
+        uploaded_at=report_dict["uploaded_at"],
+    )
