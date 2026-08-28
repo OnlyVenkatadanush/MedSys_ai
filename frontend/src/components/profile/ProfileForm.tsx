@@ -134,9 +134,9 @@ export function ProfileForm({ initial, saving, error, onCancel, onSave }: Profil
               <input
                 required
                 className={inputClass}
-                value={form.emergencyContact.name}
+                value={form.emergencyContact?.name || ""}
                 onChange={(e) =>
-                  update("emergencyContact", { ...form.emergencyContact, name: e.target.value })
+                  update("emergencyContact", { name: e.target.value, relation: form.emergencyContact?.relation || "", phone: form.emergencyContact?.phone || "" })
                 }
               />
             </div>
@@ -146,11 +146,12 @@ export function ProfileForm({ initial, saving, error, onCancel, onSave }: Profil
                 <input
                   required
                   className={inputClass}
-                  value={form.emergencyContact.relation}
+                  value={form.emergencyContact?.relation || ""}
                   onChange={(e) =>
                     update("emergencyContact", {
-                      ...form.emergencyContact,
+                      name: form.emergencyContact?.name || "",
                       relation: e.target.value,
+                      phone: form.emergencyContact?.phone || "",
                     })
                   }
                 />
@@ -160,10 +161,11 @@ export function ProfileForm({ initial, saving, error, onCancel, onSave }: Profil
                 <input
                   required
                   className={inputClass}
-                  value={form.emergencyContact.phone}
+                  value={form.emergencyContact?.phone || ""}
                   onChange={(e) =>
                     update("emergencyContact", {
-                      ...form.emergencyContact,
+                      name: form.emergencyContact?.name || "",
+                      relation: form.emergencyContact?.relation || "",
                       phone: e.target.value,
                     })
                   }

@@ -1,128 +1,106 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { searchPatients } from "@/services/clinicalService";
+import { fetchAssignedPatients, searchPatients } from "@/services/clinicalService";
 import type { DoctorPatientAssignment } from "@/types";
-import { Search, User, Stethoscope, MessageSquare, Clock, ArrowRight } from "lucide-react";
+import { Search, UserPlus, ArrowRight, ShieldCheck } from "lucide-react";
 
 export const MyPatients: React.FC = () => {
   const [patients, setPatients] = useState<DoctorPatientAssignment[]>([]);
-  const [query, setQuery] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    handleSearch("");
+    loadPatients();
   }, []);
 
-  const handleSearch = async (searchTerm: string) => {
+  const loadPatients = async () => {
     try {
       setLoading(true);
-      const res = await searchPatients(searchTerm);
+      const res = await fetchAssignedPatients();
       setPatients(res);
     } catch (err) {
-      console.error("Failed to search patients", err);
+      console.error("Failed to load patients", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    try {
+      const res = await searchPatients(query);
+      setPatients(res);
+    } catch (err) {
+      console.error("Search failed", err);
     }
   };
 
   return (
     <div className="space-y-8 pb-16">
       <PageHeader
-        eyebrow="Clinical Panel Directory"
-        title="My Patients"
-        meta="Search and access assigned patient workspaces, clinical timelines, and AI copilot tools."
+        eyebrow="Doctor Clinical Panel"
+        title="My Patients Directory"
+        meta="Search and select authorized patients assigned to your clinical care."
       />
 
       <div className="px-5 sm:px-8 space-y-6">
-        {/* Search Bar */}
-        <div className="relative rounded-2xl border border-hairline bg-surface-card p-2 shadow-xs">
-          <Search className="absolute left-5 top-4.5 h-5 w-5 text-stone" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              handleSearch(e.target.value);
-            }}
-            placeholder="Search patient by name, Patient ID (e.g. pat_01), or phone..."
-            className="w-full bg-bg-mist border border-hairline rounded-xl pl-12 pr-4 py-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-teal-deep"
-          />
+        {/* Search & Add Patient Toolbar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="relative w-full sm:w-96">
+            <Search className="absolute left-3.5 top-3 h-4 w-4 text-stone" />
+            <input
+              type="text"
+              placeholder="Search patients by name or ID (e.g. John, pat_01)..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-full rounded-xl border border-hairline bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink placeholder:text-stone/60 outline-none focus:border-teal-deep"
+            />
+          </div>
+
+          <button
+            onClick={() => navigate("/doctor/add-patient")}
+            className="w-full sm:w-auto rounded-xl bg-ink px-5 py-2.5 text-xs font-mono text-bg-mist hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-xs"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>+ Add Patient Wizard</span>
+          </button>
         </div>
 
-        {/* Patient Cards Grid */}
-        {loading ? (
-          <div className="py-12 text-center font-mono text-sm text-stone">Loading assigned patients...</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {patients.map((patient) => {
-              const isAttention = patient.patient_id === "pat_03";
-              return (
-                <div
-                  key={patient.id}
-                  className="rounded-2xl border border-hairline bg-surface-card p-6 flex flex-col justify-between space-y-6 shadow-xs hover:border-ink transition-all"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-ink text-bg-mist flex items-center justify-center font-bold text-sm">
-                          {patient.patient_name.charAt(0)}
-                        </div>
-                        <div>
-                          <h2 className="font-display text-lg tracking-tight text-ink font-semibold">
-                            {patient.patient_name}
-                          </h2>
-                          <span className="font-mono text-xs text-stone">
-                            {patient.patient_age} yrs • {patient.patient_gender || "Male"} • ID: {patient.patient_id}
-                          </span>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`font-mono text-[10px] uppercase font-bold px-2.5 py-1 rounded-full ${
-                          isAttention
-                            ? "bg-clay-alert/10 text-clay-alert border border-clay-alert/20"
-                            : "bg-teal-deep/10 text-teal-deep border border-teal-deep/20"
-                        }`}
-                      >
-                        {isAttention ? "🟠 Attention" : "🟢 Active"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 4 Action Buttons */}
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-hairline">
-                    <button
-                      onClick={() => navigate(`/doctor/patient/${patient.patient_id}`)}
-                      className="rounded-lg bg-ink py-2 text-xs font-mono text-bg-mist hover:opacity-90 transition-opacity"
-                    >
-                      Workspace
-                    </button>
-                    <button
-                      onClick={() => navigate(`/doctor/patient/${patient.patient_id}?tab=consultations`)}
-                      className="rounded-lg border border-hairline bg-bg-mist py-2 text-xs font-mono text-ink hover:bg-surface-card transition-colors"
-                    >
-                      Consultation
-                    </button>
-                    <button
-                      onClick={() => navigate(`/doctor/patient/${patient.patient_id}?tab=copilot`)}
-                      className="rounded-lg border border-hairline bg-bg-mist py-2 text-xs font-mono text-ink hover:bg-surface-card transition-colors"
-                    >
-                      Ask AI
-                    </button>
-                    <button
-                      onClick={() => navigate(`/doctor/patient/${patient.patient_id}?tab=timeline`)}
-                      className="rounded-lg border border-hairline bg-bg-mist py-2 text-xs font-mono text-ink hover:bg-surface-card transition-colors"
-                    >
-                      Timeline
-                    </button>
-                  </div>
+        {/* Patients Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {patients.map((pat) => (
+            <div
+              key={pat.id}
+              className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-4 shadow-xs flex flex-col justify-between"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-display font-semibold text-ink text-base">{pat.patient_name}</span>
+                  <span className="font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-teal-deep/10 text-teal-deep">
+                    {pat.status}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <p className="font-mono text-xs text-stone">
+                  ID: <span className="text-ink font-semibold">{pat.patient_id}</span> • Age: {pat.patient_age} • {pat.patient_gender}
+                </p>
+                <div className="flex items-center gap-1 font-mono text-[11px] text-stone pt-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-teal-deep" />
+                  <span>Authorized Doctor Access</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => navigate(`/doctor/patient/${pat.patient_id}`)}
+                className="w-full rounded-lg bg-bg-mist border border-hairline py-2 text-xs font-mono text-ink hover:bg-surface-card transition-colors flex items-center justify-center gap-1 mt-2"
+              >
+                <span>Open Workspace</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

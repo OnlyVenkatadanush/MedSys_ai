@@ -1,184 +1,17 @@
-from datetime import datetime
-from typing import Literal, Optional, Any
+"""Pydantic V2 Schemas for MedSys AI 2.0.
+
+Contains all models for Doctor Registration, 4-Step Patient Onboarding Wizard, Patient Account Activation,
+Command Center, Patient Workspace, Lab Intelligence, Voice Parsing, Analytics, Multi-Patient Comparison,
+Appointments, Medication Logs, Meal Logs, Diet Plans, Patient Chat, Audit Logs, and AI Decision Support.
+"""
+
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
-UserRole = Literal["patient", "doctor", "admin"]
+UserRole = Literal["doctor", "patient"]
 
 
-class UserRecord(BaseModel):
-    id: str
-    clerk_id: str
-    email: str
-    full_name: str
-    role: UserRole
-    created_at: str
-
-
-class DoctorPatientAssignment(BaseModel):
-    id: str
-    doctor_id: str
-    patient_id: str
-    patient_name: str
-    patient_age: int
-    patient_gender: Optional[str] = None
-    assigned_at: str
-    status: Literal["active", "archived"] = "active"
-
-
-class Vitals(BaseModel):
-    bp_systolic: Optional[int] = None
-    bp_diastolic: Optional[int] = None
-    heart_rate: Optional[int] = None
-    temperature_c: Optional[float] = None
-    spo2_pct: Optional[int] = None
-
-
-class PrescriptionItem(BaseModel):
-    medication_name: str
-    dosage: str
-    frequency: str  # e.g., "Twice daily after meals"
-    duration_days: int
-    instructions: Optional[str] = None
-
-
-class AISuggestions(BaseModel):
-    differential_diagnoses: list[str] = []
-    drug_interaction_warnings: list[str] = []
-    suggested_prescriptions: list[PrescriptionItem] = []
-    clinical_summary: str = ""
-    suggested_diet: list[str] = []
-    urgency_level: Literal["routine", "moderate", "critical"] = "routine"
-
-
-class ConsultationSession(BaseModel):
-    id: str
-    patient_id: str
-    doctor_id: str
-    doctor_name: Optional[str] = None
-    patient_name: Optional[str] = None
-    created_at: str
-    updated_at: str
-    status: Literal["draft", "finalized"] = "draft"
-    symptoms: list[str] = []
-    vitals: Optional[Vitals] = None
-    ai_suggestions: Optional[AISuggestions] = None
-    doctor_diagnosis: str = ""
-    prescriptions: list[PrescriptionItem] = []
-    doctor_notes: str = ""
-    diet_recommendations: list[str] = []
-    follow_up_date: Optional[str] = None
-    signed_off_at: Optional[str] = None
-
-
-class ConsultationCreateIn(BaseModel):
-    patient_id: str
-    symptoms: list[str] = []
-    vitals: Optional[Vitals] = None
-    doctor_notes: Optional[str] = None
-
-
-class ConsultationFinalizeIn(BaseModel):
-    doctor_diagnosis: str
-    prescriptions: list[PrescriptionItem] = []
-    doctor_notes: str = ""
-    diet_recommendations: list[str] = []
-    follow_up_date: Optional[str] = None
-    doctor_confirmation: bool = True  # Confirming review & clinical judgment
-
-
-class MedicationSchedule(BaseModel):
-    id: str
-    patient_id: str
-    medication_name: str
-    dosage: str
-    frequency: str
-    times_per_day: int = 1
-    start_date: str
-    end_date: Optional[str] = None
-    active: bool = True
-    prescribed_by_doctor_id: Optional[str] = None
-
-
-class MedicationLogIn(BaseModel):
-    medication_id: str
-    medication_name: str
-    dosage: str
-    status: Literal["taken", "skipped"] = "taken"
-    notes: Optional[str] = None
-
-
-class MedicationLogRecord(BaseModel):
-    id: str
-    patient_id: str
-    medication_id: str
-    medication_name: str
-    dosage: str
-    timestamp: str
-    status: Literal["taken", "skipped"]
-    notes: Optional[str] = None
-
-
-class DietPlan(BaseModel):
-    id: str
-    patient_id: str
-    doctor_id: Optional[str] = None
-    guidelines: str
-    allowed_foods: list[str] = []
-    restricted_foods: list[str] = []
-    updated_at: str
-
-
-class MealLogIn(BaseModel):
-    meal_type: Literal["breakfast", "lunch", "dinner", "snack"]
-    food_items: list[str]
-    notes: Optional[str] = None
-
-
-class MealLogRecord(BaseModel):
-    id: str
-    patient_id: str
-    meal_type: Literal["breakfast", "lunch", "dinner", "snack"]
-    food_items: list[str]
-    timestamp: str
-    notes: Optional[str] = None
-
-
-class LabMetric(BaseModel):
-    name: str
-    value: float
-    unit: str
-    reference_range: Optional[str] = None
-    is_abnormal: bool = False
-
-
-class LabReportRecord(BaseModel):
-    id: str
-    patient_id: str
-    uploaded_by: str
-    title: str
-    file_url: Optional[str] = None
-    extracted_text: str = ""
-    metrics: list[LabMetric] = []
-    uploaded_at: str
-
-
-class AppointmentCreateIn(BaseModel):
-    doctor_id: str
-    date_time: str
-    reason: str
-
-
-class AppointmentRecord(BaseModel):
-    id: str
-    patient_id: str
-    doctor_id: str
-    patient_name: str
-    doctor_name: str
-    date_time: str
-    reason: str
-    status: Literal["requested", "confirmed", "completed", "cancelled"] = "requested"
-    created_at: str
-
+# ==================== AUDIT LOG SCHEMA ====================
 
 class AuditLogRecord(BaseModel):
     id: str
@@ -191,92 +24,222 @@ class AuditLogRecord(BaseModel):
     details: Optional[str] = None
 
 
+# ==================== CLINICAL VITALS & AI SUGGESTIONS SCHEMAS ====================
+
+class Vitals(BaseModel):
+    bp_systolic: Optional[int] = 120
+    bp_diastolic: Optional[int] = 80
+    heart_rate: Optional[int] = 72
+    temperature_c: Optional[float] = 37.0
+    spo2_pct: Optional[int] = 98
+
+
+class PrescriptionItem(BaseModel):
+    medication_name: str
+    dosage: str
+    frequency: str
+    duration_days: int = 7
+    instructions: Optional[str] = ""
+
+
+class AISuggestions(BaseModel):
+    clinical_summary: str = ""
+    differential_diagnoses: List[str] = []
+    drug_interaction_warnings: List[str] = []
+    suggested_prescriptions: List[PrescriptionItem] = []
+    suggested_lifestyle_advice: List[str] = []
+    urgency_level: str = "routine"
+
+
+# ==================== ONBOARDING & ACCOUNT LIFECYCLE SCHEMAS ====================
+
+class DoctorRegistrationIn(BaseModel):
+    full_name: str = Field(..., min_length=2, example="Dr. Sarah Smith")
+    email: str = Field(..., example="dr.smith@medsys.ai")
+    phone: str = Field(..., example="+1-555-0100")
+    password: str = Field(..., min_length=6)
+    specialization: str = Field("General Practice", example="Cardiology & Internal Medicine")
+    license_number: str = Field(..., example="MD-994821")
+    hospital_name: Optional[str] = Field("St. Jude Medical Center")
+    experience_years: Optional[int] = Field(10)
+
+
+class PatientWizardStep1Identity(BaseModel):
+    first_name: str = Field(..., example="John")
+    last_name: str = Field(..., example="Doe")
+    dob: str = Field(..., example="1984-05-12")
+    gender: str = Field("Male", example="Male")
+    phone: str = Field(..., example="+1-555-0123")
+    email: str = Field(..., example="john.doe@example.com")
+    height_cm: Optional[float] = Field(178.0, example=178.0)
+    weight_kg: Optional[float] = Field(75.0, example=75.0)
+
+
+class PatientWizardStep2Medical(BaseModel):
+    blood_group: str = Field("O+", example="O+")
+    allergies: List[Dict[str, str]] = Field(default_factory=list, example=[{"allergen": "Penicillin", "severity": "severe"}])
+    conditions: List[Dict[str, str]] = Field(default_factory=list, example=[{"condition_name": "Mild Hypertension"}])
+    emergency_contact_name: Optional[str] = Field("Jane Doe")
+    emergency_contact_phone: Optional[str] = Field("+1-555-0199")
+
+
+class PatientWizardStep3Clinical(BaseModel):
+    registration_reason: Optional[str] = Field("Initial routine intake & blood pressure monitoring")
+    initial_symptoms: Optional[str] = Field("Occasional mild headache")
+    initial_doctor_notes: Optional[str] = Field("Patient onboarding notes recorded by doctor")
+
+
+class PatientWizardCreateIn(BaseModel):
+    identity: PatientWizardStep1Identity
+    medical: PatientWizardStep2Medical
+    clinical: Optional[PatientWizardStep3Clinical] = None
+
+
+class PatientWizardOut(BaseModel):
+    patient_id: str
+    patient_id_code: str
+    name: str
+    email: str
+    account_state: str
+    invitation_token: str
+    activation_url: str
+    message: str
+
+
+class PatientActivationIn(BaseModel):
+    invitation_token: str
+    password: str = Field(..., min_length=6)
+    confirm_password: str = Field(..., min_length=6)
+
+
+# ==================== APPOINTMENT SCHEMAS ====================
+
+class AppointmentCreateIn(BaseModel):
+    patient_id: Optional[str] = "pat_01"
+    doctor_id: Optional[str] = "doc_01"
+    patient_name: Optional[str] = "John Doe"
+    doctor_name: Optional[str] = "Dr. Sarah Smith"
+    appointment_date: str = Field(..., example="2026-09-05T10:00:00Z")
+    reason: str = Field(..., example="Routine Follow-up & Blood Pressure Check")
+
+
+class AppointmentRecord(BaseModel):
+    id: str
+    patient_id: str
+    doctor_id: str
+    patient_name: str
+    doctor_name: str
+    date_time: str
+    reason: str
+    status: str
+    created_at: str
+
+
+# ==================== PATIENT PORTAL SCHEMAS ====================
+
+class MedicationSchedule(BaseModel):
+    id: str
+    patient_id: str
+    medication_name: str
+    dosage: str
+    frequency: str
+    times_per_day: int
+    start_date: str
+    active: bool
+    prescribed_by_doctor_id: str
+
+
+class MedicationLogIn(BaseModel):
+    medication_id: str
+    medication_name: str
+    dosage: str
+    status: str = "taken"
+
+
+class MedicationLogRecord(BaseModel):
+    id: str
+    patient_id: str
+    medication_id: str
+    medication_name: str
+    dosage: str
+    timestamp: str
+    status: str
+
+
+class MealLogIn(BaseModel):
+    meal_type: str
+    food_items: List[str]
+    notes: Optional[str] = ""
+
+
+class MealLogRecord(BaseModel):
+    id: str
+    patient_id: str
+    meal_type: str
+    food_items: List[str]
+    timestamp: str
+    notes: Optional[str] = ""
+
+
+class DietPlan(BaseModel):
+    id: str
+    patient_id: str
+    doctor_id: str
+    guidelines: str
+    allowed_foods: List[str]
+    restricted_foods: List[str]
+    updated_at: str
+
+
 class PatientClarificationMessage(BaseModel):
     id: str
-    role: Literal["user", "assistant"]
-    content: str
+    session_id: str
+    sender: str
+    message: str
     created_at: str
-    is_red_flag: bool = False
-    emergency_guidance: Optional[str] = None
 
 
-# ==================== DOCTOR COMMAND CENTER & CLINICAL COPILOT SCHEMAS ====================
+# ==================== CLINICAL WORKSPACE & COMMAND CENTER SCHEMAS ====================
 
 class AlertRecord(BaseModel):
     id: str
     patient_id: str
     patient_name: str
     doctor_id: str
-    type: Literal["lab", "adherence", "followup", "vitals"]
-    severity: Literal["critical", "important", "attention", "info"] = "attention"
+    type: str
+    severity: str
     title: str
     message: str
     is_read: bool = False
     created_at: str
 
 
-class MetricHistoryPoint(BaseModel):
-    date: str
-    value: float
-    is_abnormal: bool = False
-
-
-class LabMetricTrend(BaseModel):
-    metric_name: str
-    unit: str
-    history: list[MetricHistoryPoint] = []
-    trend_direction: Literal["up", "down", "stable"] = "stable"
-
-
-class PreConsultationBrief(BaseModel):
+class DoctorPatientAssignment(BaseModel):
+    id: str
+    doctor_id: str
     patient_id: str
     patient_name: str
-    age: int
-    last_visit_date: str
-    main_concerns: list[str] = []
-    trend_summary: str
-    suggested_discussion_topics: list[str] = []
-
-
-class CommandCenterData(BaseModel):
-    total_patients: int
-    todays_appointments_count: int
-    pending_labs_count: int
-    active_alerts_count: int
-    priority_queue: list[AlertRecord] = []
-    todays_appointments: list[AppointmentRecord] = []
-
-
-class CopilotChatIn(BaseModel):
-    patient_id: Optional[str] = None
-    message: str
-
-
-# ==================== V1.5 & V2 ADVANCED DOCTOR SCHEMAS ====================
-
-class MetricChangeItem(BaseModel):
-    metric: str
-    previous: str
-    current: str
-    direction: Literal["up", "down", "stable"]
-    is_abnormal: bool = False
+    patient_age: int
+    patient_gender: str
+    assigned_at: str
+    status: str
 
 
 class WhatsNewChanges(BaseModel):
     patient_id: str
     last_visit_date: str
     current_date: str
-    metrics_changes: list[MetricChangeItem] = []
-    events_since_last_visit: list[str] = []
-    attention_items_count: int = 0
+    metrics_changes: List[Dict[str, Any]]
+    events_since_last_visit: List[str]
+    attention_items_count: int
 
 
 class EvidenceTrace(BaseModel):
     insight_id: str
     patient_id: str
     title: str
-    evidence_sources: list[str] = []
-    relevant_changes: list[str] = []
+    evidence_sources: List[str]
+    relevant_changes: List[str]
 
 
 class VoiceParseIn(BaseModel):
@@ -285,7 +248,7 @@ class VoiceParseIn(BaseModel):
 
 class StructuredVoiceNoteOut(BaseModel):
     chief_complaint: str
-    symptoms: list[str] = []
+    symptoms: List[str]
     duration: str
     observations: str
     doctor_notes: str
@@ -297,7 +260,7 @@ class DoctorAnalytics(BaseModel):
     pending_lab_reviews: int
     upcoming_appointments: int
     overall_adherence_rate: str
-    weekly_consultation_velocity: list[dict] = []
+    weekly_consultation_velocity: List[Dict[str, Any]]
 
 
 class PatientComparisonCard(BaseModel):
@@ -310,9 +273,115 @@ class PatientComparisonCard(BaseModel):
     adherence_rate: str
     latest_bp: str
     latest_glucose: str
-    status: Literal["stable", "attention", "critical"]
+    status: str
 
 
 class MultiPatientCompareResult(BaseModel):
-    patients: list[PatientComparisonCard] = []
+    patients: List[PatientComparisonCard]
     comparison_summary: str
+
+
+class LabMetric(BaseModel):
+    name: str
+    value: float
+    unit: str
+    reference_range: str
+    is_abnormal: bool
+
+
+class LabReportRecord(BaseModel):
+    id: str
+    patient_id: str
+    uploaded_by: str
+    title: str
+    extracted_text: str
+    metrics: List[LabMetric]
+    uploaded_at: str
+
+
+class MetricHistoryPoint(BaseModel):
+    date: str
+    value: float
+    is_abnormal: bool
+
+
+class LabMetricTrend(BaseModel):
+    metric_name: str
+    unit: str
+    history: List[MetricHistoryPoint]
+    trend_direction: str
+
+
+class PreConsultationBrief(BaseModel):
+    patient_id: str
+    patient_name: str
+    age: int
+    last_visit_date: str
+    main_concerns: List[str]
+    trend_summary: str
+    suggested_discussion_topics: List[str]
+
+
+class CommandCenterData(BaseModel):
+    total_patients: int
+    todays_appointments_count: int
+    pending_labs_count: int
+    active_alerts_count: int
+    priority_queue: List[AlertRecord]
+    todays_appointments: List[AppointmentRecord]
+
+
+class VitalsIn(BaseModel):
+    systolic_bp: int = 120
+    diastolic_bp: int = 80
+    heart_rate: int = 72
+    temperature_c: float = 37.0
+    spo2_pct: int = 98
+
+
+class PrescriptionIn(BaseModel):
+    medication_name: str
+    dosage: str
+    frequency: str
+    duration_days: int = 7
+    instructions: str = ""
+
+
+class ConsultationCreateIn(BaseModel):
+    patient_id: str
+    symptoms: List[str]
+    vitals: Optional[VitalsIn] = None
+    doctor_notes: Optional[str] = ""
+
+
+class ConsultationFinalizeIn(BaseModel):
+    doctor_diagnosis: str
+    prescriptions: List[PrescriptionIn]
+    doctor_notes: str
+    diet_recommendations: List[str] = []
+    follow_up_date: Optional[str] = None
+
+
+class ConsultationSession(BaseModel):
+    id: str
+    patient_id: str
+    doctor_id: str
+    doctor_name: str
+    patient_name: str
+    created_at: str
+    updated_at: str
+    status: str
+    symptoms: List[str]
+    vitals: Optional[VitalsIn] = None
+    ai_suggestions: Optional[Any] = None
+    doctor_diagnosis: Optional[str] = None
+    prescriptions: List[PrescriptionIn] = []
+    doctor_notes: Optional[str] = None
+    diet_recommendations: List[str] = []
+    follow_up_date: Optional[str] = None
+    signed_off_at: Optional[str] = None
+
+
+class CopilotChatIn(BaseModel):
+    message: str
+    patient_id: Optional[str] = "pat_01"

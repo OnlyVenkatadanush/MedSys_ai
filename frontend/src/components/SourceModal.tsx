@@ -105,7 +105,7 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
               <p className="text-[13px] text-stone">Loading…</p>
             ) : (
               <div className="text-[14px] leading-relaxed text-ink/90">
-                <Markdown content={detail.content} />
+                <Markdown content={detail.content || detail.snippet || ""} />
               </div>
             )}
           </div>

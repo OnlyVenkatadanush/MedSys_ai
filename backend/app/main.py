@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import (
     appointments,
+    auth,
     chat,
     doctor,
     documents,
@@ -42,6 +43,7 @@ def root():
 # Public probe endpoints
 app.include_router(health.router)
 app.include_router(facilities.router)
+app.include_router(auth.router)
 
 # Multi-tenant Clinical & Patient Routers
 app.include_router(doctor.router)

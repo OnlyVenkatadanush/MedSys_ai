@@ -49,17 +49,17 @@ export interface ConsultationSession {
   id: string;
   patient_id: string;
   doctor_id: string;
-  doctor_name?: string;
-  patient_name?: string;
+  doctor_name: string;
+  patient_name: string;
   created_at: string;
   updated_at: string;
-  status: "draft" | "finalized";
+  status: "draft" | "finalized" | "archived";
   symptoms: string[];
   vitals?: Vitals;
   ai_suggestions?: AISuggestions;
-  doctor_diagnosis: string;
+  doctor_diagnosis?: string;
   prescriptions: PrescriptionItem[];
-  doctor_notes: string;
+  doctor_notes?: string;
   diet_recommendations: string[];
   follow_up_date?: string;
   signed_off_at?: string;
@@ -73,9 +73,8 @@ export interface MedicationSchedule {
   frequency: string;
   times_per_day: number;
   start_date: string;
-  end_date?: string;
   active: boolean;
-  prescribed_by_doctor_id?: string;
+  prescribed_by_doctor_id: string;
 }
 
 export interface MedicationLogRecord {
@@ -86,14 +85,32 @@ export interface MedicationLogRecord {
   dosage: string;
   timestamp: string;
   status: "taken" | "skipped";
+}
+
+export interface MealLogRecord {
+  id: string;
+  patient_id: string;
+  meal_type: "breakfast" | "lunch" | "dinner" | "snack";
+  food_items: string[];
+  timestamp: string;
   notes?: string;
+}
+
+export interface DietPlan {
+  id: string;
+  patient_id: string;
+  doctor_id: string;
+  guidelines: string;
+  allowed_foods: string[];
+  restricted_foods: string[];
+  updated_at: string;
 }
 
 export interface LabMetric {
   name: string;
   value: number;
   unit: string;
-  reference_range?: string;
+  reference_range: string;
   is_abnormal: boolean;
 }
 
@@ -108,51 +125,17 @@ export interface LabReportRecord {
   uploaded_at: string;
 }
 
-export interface AppointmentRecord {
-  id: string;
-  patient_id: string;
-  doctor_id: string;
-  patient_name: string;
-  doctor_name: string;
-  date_time: string;
-  reason: string;
-  status: "requested" | "confirmed" | "completed" | "cancelled";
-  created_at: string;
-}
-
-export interface PatientClarificationMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
-  is_red_flag?: boolean;
-  emergency_guidance?: string;
-}
-
-export interface AlertRecord {
-  id: string;
-  patient_id: string;
-  patient_name: string;
-  doctor_id: string;
-  type: "lab" | "adherence" | "followup" | "vitals";
-  severity: "critical" | "important" | "attention" | "info";
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-}
-
 export interface MetricHistoryPoint {
   date: string;
   value: number;
-  is_abnormal?: boolean;
+  is_abnormal: boolean;
 }
 
 export interface LabMetricTrend {
   metric_name: string;
   unit: string;
   history: MetricHistoryPoint[];
-  trend_direction: "up" | "down" | "stable";
+  trend_direction: "up" | "down" | "flat";
 }
 
 export interface PreConsultationBrief {
@@ -165,6 +148,53 @@ export interface PreConsultationBrief {
   suggested_discussion_topics: string[];
 }
 
+export interface PatientClarificationMessage {
+  id: string;
+  session_id?: string;
+  sender?: string;
+  role?: string;
+  message?: string;
+  content?: string;
+  is_red_flag?: boolean;
+  created_at: string;
+}
+
+export interface AppointmentRecord {
+  id: string;
+  patient_id: string;
+  doctor_id: string;
+  patient_name: string;
+  doctor_name: string;
+  date_time: string;
+  reason: string;
+  status: "requested" | "confirmed" | "completed" | "cancelled";
+  created_at: string;
+}
+
+export interface AlertRecord {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  doctor_id: string;
+  type: "vital" | "lab" | "adherence" | "symptom" | "followup";
+  severity: "info" | "attention" | "important" | "critical";
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  timestamp: string;
+  actor_id: string;
+  actor_role: UserRole;
+  action: string;
+  target_patient_id: string;
+  resource: string;
+  details?: string;
+}
+
 export interface CommandCenterData {
   total_patients: number;
   todays_appointments_count: number;
@@ -174,21 +204,17 @@ export interface CommandCenterData {
   todays_appointments: AppointmentRecord[];
 }
 
-/* ==================== V1.5 & V2 ADVANCED DOCTOR TYPES ==================== */
-
-export interface MetricChangeItem {
-  metric: string;
-  previous: string;
-  current: string;
-  direction: "up" | "down" | "stable";
-  is_abnormal?: boolean;
-}
-
 export interface WhatsNewChanges {
   patient_id: string;
   last_visit_date: string;
   current_date: string;
-  metrics_changes: MetricChangeItem[];
+  metrics_changes: Array<{
+    metric: string;
+    previous: string;
+    current: string;
+    direction: "up" | "down" | "flat";
+    is_abnormal: boolean;
+  }>;
   events_since_last_visit: string[];
   attention_items_count: number;
 }
@@ -234,4 +260,125 @@ export interface PatientComparisonCard {
 export interface MultiPatientCompareResult {
   patients: PatientComparisonCard[];
   comparison_summary: string;
+}
+
+export type ChatSourceKind = "doc" | "web" | "system" | "report" | "consultation" | "consult_prescription" | "prescription";
+
+export interface ChatSourceDetail {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  content?: string;
+  kind?: ChatSourceKind;
+  id?: string;
+  label?: string;
+  details?: any;
+}
+
+export interface ChatSource {
+  kind: ChatSourceKind;
+  id: string;
+  label?: string;
+  title?: string;
+  uploadedAt?: string;
+  excerpt?: string;
+  url?: string;
+  details?: ChatSourceDetail;
+}
+
+export interface ChatMessage {
+  id: string;
+  session_id?: string;
+  sender?: "user" | "assistant";
+  role?: "user" | "assistant";
+  message?: string;
+  content?: string;
+  quickOptions?: string[];
+  isRedFlag?: boolean;
+  sources?: ChatSource[];
+  created_at?: string;
+  createdAt?: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at?: string;
+  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sourceIds?: string[];
+}
+
+export type FacilityType = "hospital" | "clinic" | "pharmacy" | "diagnostic_center";
+
+export interface Facility {
+  id: string;
+  name: string;
+  type: FacilityType;
+  address: string;
+  phone?: string;
+  specialty?: string;
+  lat: number;
+  lng: number;
+  distance_km?: number;
+  distanceKm?: number;
+  openNow?: boolean;
+}
+
+export interface HomeSnapshot {
+  user_name?: string;
+  role?: string;
+  upcoming_appointments_count?: number;
+  active_alerts_count?: number;
+  recent_activities?: string[];
+  status?: any;
+  statusNote?: any;
+  environment?: any;
+  tip?: any;
+  generalTip?: any;
+  graph?: any;
+}
+
+export interface EnvironmentSnapshot {
+  locationName: string;
+  tempC: number;
+  condition: string;
+  humidityPct: number;
+  aqi: number;
+  aqiCategory: string;
+  pollutants: Array<{ label: string; value: number; unit: string }>;
+  updatedAt: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: any[];
+  edges: any[];
+}
+
+export interface SystemStatus {
+  status: string;
+  message: string;
+}
+
+export interface ModelStatus {
+  status?: "online" | "offline" | "degraded";
+  active_model?: string;
+  provider?: string;
+  model?: string;
+  reachable?: boolean;
+}
+
+export interface ProfileRecord {
+  id?: string;
+  userId?: string;
+  fullName: string;
+  age?: number;
+  weightKg?: number;
+  heightCm?: number;
+  bmi?: number;
+  bloodGroup?: string;
+  conditions: string[];
+  medications: Array<{ name: string; dosage: string }>;
+  emergencyContact?: { name?: string; relation?: string; phone?: string };
 }
