@@ -46,22 +46,22 @@ export default function FindCare() {
 
 
   const specialties = useMemo(
-    () => Array.from(new Set(facilities.map((f) => f.specialty))),
+    () => Array.from(new Set(facilities.map((f) => f.specialty).filter(Boolean))) as string[],
     [facilities],
   );
 
   const withDistance = useMemo(() => {
     if (!userLocation) return facilities;
     return facilities
-      .map((f) => ({ ...f, distanceKm: haversineKm(userLocation, f) }))
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+      .map((f) => ({ ...f, distanceKm: haversineKm(userLocation, { lat: f.lat ?? 0, lng: f.lng ?? 0 }) }))
+      .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
   }, [facilities, userLocation]);
 
   const filtered = useMemo(() => {
     let list = withDistance;
     if (specialty) list = list.filter((f) => f.specialty === specialty);
     if (facilityType) list = list.filter((f) => f.type === facilityType);
-    if (radius) list = list.filter((f) => f.distanceKm <= radius);
+    if (radius) list = list.filter((f) => (f.distanceKm ?? 0) <= radius);
     return list;
   }, [withDistance, specialty, facilityType, radius]);
 

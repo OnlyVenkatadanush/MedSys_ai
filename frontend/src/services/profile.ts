@@ -22,7 +22,7 @@ export async function getProfile(): Promise<ProfileRecord | null> {
 
 export async function saveProfile(input: ProfileInput): Promise<ProfileRecord> {
   if (isMockMode) {
-    return mockDelay({ ...input, bmi: computeBmi(input.weightKg, input.heightCm) });
+    return mockDelay({ ...input, bmi: computeBmi(input.weightKg ?? 70, input.heightCm ?? 170) });
   }
   return apiFetch<ProfileRecord>("/profile", {
     method: "PUT",

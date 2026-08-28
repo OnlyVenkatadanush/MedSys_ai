@@ -106,7 +106,7 @@ export default function Profile() {
 
   if (!profile) return null;
 
-  const bmiCat = getBmiCategory(profile.bmi);
+  const bmiCat = getBmiCategory(profile.bmi ?? 22.5);
   const initials = profile.fullName
     .split(" ")
     .map((n) => n[0])
@@ -174,7 +174,7 @@ export default function Profile() {
                 <div className="text-left">
                   <span className="block font-mono text-[10px] uppercase tracking-wider text-stone">BMI Index</span>
                   <span className={`font-mono text-[15px] font-bold ${bmiCat.colorClass}`}>
-                    {profile.bmi.toFixed(1)} <span className="text-[12px] font-medium">({bmiCat.label})</span>
+                    {(profile.bmi ?? 22.5).toFixed(1)} <span className="text-[12px] font-medium">({bmiCat.label})</span>
                   </span>
                 </div>
               </div>
@@ -305,10 +305,10 @@ export default function Profile() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <p className="text-lg font-semibold text-ink">{profile.emergencyContact.name || "None set"}</p>
-                <p className="text-[12px] text-stone">Relation: <span className="font-medium text-ink">{profile.emergencyContact.relation || "N/A"}</span></p>
+                <p className="text-lg font-semibold text-ink">{profile.emergencyContact?.name || "None set"}</p>
+                <p className="text-[12px] text-stone">Relation: <span className="font-medium text-ink">{profile.emergencyContact?.relation || "N/A"}</span></p>
                 
-                {profile.emergencyContact.phone && (
+                {profile.emergencyContact?.phone && (
                   <div className="mt-3 flex items-center justify-between rounded-xl bg-bg-mist p-3">
                     <span className="font-mono text-[14px] font-medium text-ink">
                       {profile.emergencyContact.phone}
@@ -316,7 +316,7 @@ export default function Profile() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleCopyPhone(profile.emergencyContact.phone)}
+                        onClick={() => handleCopyPhone(profile.emergencyContact?.phone || "")}
                         className="flex items-center gap-1 rounded-lg border border-hairline px-2.5 py-1 text-[11px] font-medium text-stone hover:bg-surface-card active:scale-95 transition-all"
                       >
                         {copied ? (
@@ -404,7 +404,7 @@ export default function Profile() {
               <h3 className="text-lg font-semibold text-ink">Confirm Emergency Call</h3>
             </div>
             <p className="text-[13px] leading-relaxed text-stone mb-6">
-              Are you sure you want to call emergency contact <span className="font-semibold text-ink">{profile.emergencyContact.name}</span> ({profile.emergencyContact.relation}) at <span className="font-mono font-medium text-ink">{profile.emergencyContact.phone}</span>?
+              Are you sure you want to call emergency contact <span className="font-semibold text-ink">{profile.emergencyContact?.name || "SOS"}</span> ({profile.emergencyContact?.relation || "Contact"}) at <span className="font-mono font-medium text-ink">{profile.emergencyContact?.phone || ""}</span>?
             </p>
             <div className="flex items-center justify-end gap-3">
               <button
@@ -415,7 +415,7 @@ export default function Profile() {
                 Cancel
               </button>
               <a
-                href={`tel:${profile.emergencyContact.phone}`}
+                href={`tel:${profile.emergencyContact?.phone || ""}`}
                 onClick={() => setShowCallModal(false)}
                 className="flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-2 text-[13px] font-medium text-white shadow-md hover:bg-amber-600 active:scale-95 transition-all"
               >
