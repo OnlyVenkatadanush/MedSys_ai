@@ -64,6 +64,28 @@ def init_sqlite_db():
     );
     """)
 
+    # Auto-migrate columns if table pre-existed
+    cursor.execute("PRAGMA table_info(patients);")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    missing_cols = {
+        "patient_id_code": "TEXT DEFAULT 'PAT-000101'",
+        "age": "INTEGER DEFAULT 40",
+        "gender": "TEXT DEFAULT 'Male'",
+        "blood_group": "TEXT DEFAULT 'O+'",
+        "height_cm": "REAL DEFAULT 170.0",
+        "weight_kg": "REAL DEFAULT 70.0",
+        "phone": "TEXT",
+        "address": "TEXT",
+        "emergency_contact_name": "TEXT",
+        "emergency_contact_phone": "TEXT",
+        "account_state": "TEXT DEFAULT 'ACTIVE'",
+    }
+    for col_name, col_def in missing_cols.items():
+        if col_name not in existing_cols:
+            cursor.execute(f"ALTER TABLE patients ADD COLUMN {col_name} {col_def};")
+
+
+
     # 3. doctor_patient
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS doctor_patient (

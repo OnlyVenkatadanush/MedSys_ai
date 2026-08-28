@@ -137,6 +137,13 @@ async def add_patient_wizard(
     ))
 
     # Step 2: Create Doctor-Patient RBAC Assignment
+    cursor.execute("SELECT id FROM doctors WHERE id = ?;", (user.user_id,))
+    if not cursor.fetchone():
+        cursor.execute("""
+        INSERT INTO doctors (id, name, email, phone, specialization, license_number, hospital_name, experience_years, created_at)
+        VALUES (?, ?, ?, '+1-555-0100', 'Cardiology & Internal Medicine', 'MD-994821', 'St. Jude Medical Center', 10, ?);
+        """, (user.user_id, user.full_name, user.email, now))
+
     cursor.execute("""
     INSERT INTO doctor_patient (id, doctor_id, patient_id, assigned_at, status)
     VALUES (?, ?, ?, ?, 'active');
