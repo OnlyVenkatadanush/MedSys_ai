@@ -8,7 +8,13 @@ import Profile from "@/pages/Profile";
 import { SelectRolePage } from "@/pages/auth/SelectRolePage";
 import { RoleLoginPage } from "@/pages/auth/RoleLoginPage";
 
-import { DoctorDashboard } from "@/pages/doctor/DoctorDashboard";
+import { DoctorCommandCenter } from "@/pages/doctor/DoctorCommandCenter";
+import { MyPatients } from "@/pages/doctor/MyPatients";
+import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
+import { ClinicalCopilot } from "@/pages/doctor/ClinicalCopilot";
+import { DoctorAnalyticsPage } from "@/pages/doctor/DoctorAnalytics";
+import { MultiPatientComparePage } from "@/pages/doctor/MultiPatientCompare";
+
 import { PatientDashboard } from "@/pages/patient/PatientDashboard";
 import { MedicationTracker } from "@/pages/patient/MedicationTracker";
 import { DietManager } from "@/pages/patient/DietManager";
@@ -33,10 +39,15 @@ export default function App() {
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Navigate to="/doctor/dashboard" replace />} />
           
-          {/* Doctor Portal */}
-          <Route path="/doctor/dashboard" element={<DoctorDashboard />} />
+          {/* Doctor Portal Routes */}
+          <Route path="/doctor/dashboard" element={<DoctorCommandCenter />} />
+          <Route path="/doctor/patients" element={<MyPatients />} />
+          <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />
+          <Route path="/doctor/copilot" element={<ClinicalCopilot />} />
+          <Route path="/doctor/analytics" element={<DoctorAnalyticsPage />} />
+          <Route path="/doctor/compare" element={<MultiPatientComparePage />} />
           
-          {/* Patient Portal */}
+          {/* Patient Portal Routes */}
           <Route path="/patient/dashboard" element={<PatientDashboard />} />
           <Route path="/patient/medications" element={<MedicationTracker />} />
           <Route path="/patient/diet" element={<DietManager />} />

@@ -11,9 +11,14 @@ import {
   Pill,
   Utensils,
   Calendar,
+  Users,
+  Sparkles,
+  BarChart3,
+  GitCompare,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getActiveRoleOverride } from "@/services/client";
+import { CommandPalette } from "@/components/CommandPalette";
 
 interface NavItem {
   to: string;
@@ -22,7 +27,12 @@ interface NavItem {
 }
 
 const DOCTOR_NAV_ITEMS: NavItem[] = [
-  { to: "/doctor/dashboard", label: "Doctor Portal", icon: Stethoscope },
+  { to: "/doctor/dashboard", label: "Command Center", icon: Stethoscope },
+  { to: "/doctor/patients", label: "My Patients", icon: Users },
+  { to: "/doctor/copilot", label: "Clinical Copilot", icon: Sparkles },
+  { to: "/doctor/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/doctor/compare", label: "Compare Patients", icon: GitCompare },
+  { to: "/appointments", label: "Appointments", icon: Calendar },
   { to: "/find-care", label: "Find Care", icon: MapPinned },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
@@ -54,6 +64,7 @@ export function NavShell() {
 
   return (
     <div className="min-h-dvh bg-bg-mist text-ink font-sans">
+      <CommandPalette />
       <div className="mx-auto flex min-h-dvh max-w-[1400px]">
         {/* Left Sidebar */}
         <aside className="sticky top-0 hidden h-dvh w-[80px] shrink-0 flex-col items-center gap-1 border-r border-hairline py-6 lg:flex xl:w-[240px] xl:items-stretch xl:px-4">

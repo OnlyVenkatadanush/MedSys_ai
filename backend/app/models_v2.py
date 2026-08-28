@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from pydantic import BaseModel, Field
 
 UserRole = Literal["patient", "doctor", "admin"]
@@ -83,6 +83,7 @@ class ConsultationFinalizeIn(BaseModel):
     doctor_notes: str = ""
     diet_recommendations: list[str] = []
     follow_up_date: Optional[str] = None
+    doctor_confirmation: bool = True  # Confirming review & clinical judgment
 
 
 class MedicationSchedule(BaseModel):
@@ -197,3 +198,121 @@ class PatientClarificationMessage(BaseModel):
     created_at: str
     is_red_flag: bool = False
     emergency_guidance: Optional[str] = None
+
+
+# ==================== DOCTOR COMMAND CENTER & CLINICAL COPILOT SCHEMAS ====================
+
+class AlertRecord(BaseModel):
+    id: str
+    patient_id: str
+    patient_name: str
+    doctor_id: str
+    type: Literal["lab", "adherence", "followup", "vitals"]
+    severity: Literal["critical", "important", "attention", "info"] = "attention"
+    title: str
+    message: str
+    is_read: bool = False
+    created_at: str
+
+
+class MetricHistoryPoint(BaseModel):
+    date: str
+    value: float
+    is_abnormal: bool = False
+
+
+class LabMetricTrend(BaseModel):
+    metric_name: str
+    unit: str
+    history: list[MetricHistoryPoint] = []
+    trend_direction: Literal["up", "down", "stable"] = "stable"
+
+
+class PreConsultationBrief(BaseModel):
+    patient_id: str
+    patient_name: str
+    age: int
+    last_visit_date: str
+    main_concerns: list[str] = []
+    trend_summary: str
+    suggested_discussion_topics: list[str] = []
+
+
+class CommandCenterData(BaseModel):
+    total_patients: int
+    todays_appointments_count: int
+    pending_labs_count: int
+    active_alerts_count: int
+    priority_queue: list[AlertRecord] = []
+    todays_appointments: list[AppointmentRecord] = []
+
+
+class CopilotChatIn(BaseModel):
+    patient_id: Optional[str] = None
+    message: str
+
+
+# ==================== V1.5 & V2 ADVANCED DOCTOR SCHEMAS ====================
+
+class MetricChangeItem(BaseModel):
+    metric: str
+    previous: str
+    current: str
+    direction: Literal["up", "down", "stable"]
+    is_abnormal: bool = False
+
+
+class WhatsNewChanges(BaseModel):
+    patient_id: str
+    last_visit_date: str
+    current_date: str
+    metrics_changes: list[MetricChangeItem] = []
+    events_since_last_visit: list[str] = []
+    attention_items_count: int = 0
+
+
+class EvidenceTrace(BaseModel):
+    insight_id: str
+    patient_id: str
+    title: str
+    evidence_sources: list[str] = []
+    relevant_changes: list[str] = []
+
+
+class VoiceParseIn(BaseModel):
+    raw_speech_text: str
+
+
+class StructuredVoiceNoteOut(BaseModel):
+    chief_complaint: str
+    symptoms: list[str] = []
+    duration: str
+    observations: str
+    doctor_notes: str
+
+
+class DoctorAnalytics(BaseModel):
+    total_assigned_patients: int
+    consultations_this_week: int
+    pending_lab_reviews: int
+    upcoming_appointments: int
+    overall_adherence_rate: str
+    weekly_consultation_velocity: list[dict] = []
+
+
+class PatientComparisonCard(BaseModel):
+    patient_id: str
+    name: str
+    age: int
+    gender: str
+    blood_group: str
+    primary_diagnosis: str
+    adherence_rate: str
+    latest_bp: str
+    latest_glucose: str
+    status: Literal["stable", "attention", "critical"]
+
+
+class MultiPatientCompareResult(BaseModel):
+    patients: list[PatientComparisonCard] = []
+    comparison_summary: str
