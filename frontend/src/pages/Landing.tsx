@@ -1,160 +1,155 @@
 import { motion } from "framer-motion";
-import { Link, Navigate } from "react-router-dom";
-import { SignedIn, SignedOut } from "@clerk/clerk-react";
-import { Activity, MessageSquare, MapPinned, FileStack } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Stethoscope, User, Activity, MessageSquare, MapPinned, FileStack, ShieldCheck, ArrowRight } from "lucide-react";
 import { Thread } from "@/components/Thread";
 import { staggerContainer, riseIn, riseInReduced } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { getActiveRoleOverride } from "@/services/client";
 
 const FEATURES = [
   {
+    icon: Stethoscope,
+    title: "Doctor Decision Support & Sign-off",
+    body: "Doctors review candidate differential diagnoses, drug interaction alerts, and officially sign off on patient care plans.",
+  },
+  {
     icon: Activity,
-    title: "One glance, whole picture",
-    body: "A daily status read, live weather and air quality, and a knowledge-graph alert the moment two logged symptoms form a pattern worth flagging.",
+    title: "Patient Care & Medication Reminders",
+    body: "Patients view doctor-approved prescriptions, log daily medication compliance, and manage doctor-recommended diet plans.",
   },
   {
     icon: MessageSquare,
-    title: "Chat grounded on your records",
-    body: "Ask questions against documents you choose — nothing else leaks in. Deep web search and voice input included.",
-  },
-  {
-    icon: MapPinned,
-    title: "Find care nearby",
-    body: "Search hospitals, clinics, and diagnostic centers around you, filtered by specialty and distance.",
+    title: "Patient Clarification Chatbot",
+    body: "Ask questions grounded in your doctor's published instructions, equipped with emergency red-flag triage detection.",
   },
   {
     icon: FileStack,
-    title: "Every record, organized",
-    body: "Upload prescriptions, reports, and consultation notes — OCR and an LLM turn them into structured, searchable cards.",
+    title: "Lab Report OCR Storage Vault",
+    body: "Upload diagnostic reports and prescriptions — automated OCR extracts and parses structured lab metrics.",
   },
 ];
 
 export default function Landing() {
   const reduced = useReducedMotion();
   const item = reduced ? riseInReduced : riseIn;
+  const activeRole = getActiveRoleOverride();
 
   return (
-    <div className="min-h-dvh bg-bg-mist text-ink">
-      <SignedIn>
-        <Navigate to="/dashboard" replace />
-      </SignedIn>
-
-      <header className="mx-auto flex max-w-[1100px] items-center justify-between px-5 pt-6 sm:px-8">
+    <div className="min-h-dvh bg-bg-mist text-ink font-sans flex flex-col justify-between">
+      {/* Header Bar */}
+      <header className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-5 pt-6 sm:px-8">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-bg-mist">
             <ThreadMark />
           </span>
-          <span className="font-display text-lg tracking-tight">MedSys</span>
+          <span className="font-display text-lg tracking-tight">
+            MedSys <span className="text-xs font-mono font-semibold text-teal-deep">2.0</span>
+          </span>
         </div>
-        <SignedOut>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/sign-in"
-              className="rounded-full px-4 py-2 text-sm text-stone transition-colors hover:text-ink"
-            >
-              Sign in
-            </Link>
-            <Link
-              to="/sign-up"
-              className="rounded-full bg-ink px-4 py-2 text-sm text-bg-mist transition-opacity hover:opacity-90"
-            >
-              Get started
-            </Link>
-          </div>
-        </SignedOut>
+
+        <div className="flex items-center gap-3">
+          <Link
+            to="/select-role"
+            className="font-mono text-xs text-stone transition-colors hover:text-ink px-3 py-1.5"
+          >
+            Role Selection
+          </Link>
+          <Link
+            to="/select-role"
+            className="rounded-full bg-ink px-4 py-2 text-xs font-medium text-bg-mist transition-opacity hover:opacity-90 shadow-xs"
+          >
+            Sign In / Portal Entry
+          </Link>
+        </div>
       </header>
 
+      {/* Main Hero Body */}
       <motion.main
-        className="mx-auto flex max-w-[1100px] flex-col gap-24 px-5 pb-24 pt-16 sm:px-8 sm:pt-24"
+        className="mx-auto flex max-w-[1100px] flex-col gap-16 px-5 pb-24 pt-12 sm:px-8 sm:pt-20"
         variants={staggerContainer(0.1)}
         initial="hidden"
         animate="show"
       >
-        <motion.div variants={item} className="relative">
-          <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.14em] text-stone">
-            Personal health intelligence
-          </p>
-          <h1 className="max-w-[16ch] font-display text-[42px] leading-[1.08] tracking-tight sm:text-[58px]">
-            Your health record, finally legible.
-          </h1>
-          <p className="mt-6 max-w-[46ch] text-base text-stone sm:text-lg">
-            MedSys keeps every report, chat, and symptom in one grounded
-            place — and quietly connects the dots you'd otherwise miss.
-          </p>
-          <div className="mt-8 flex items-center gap-3">
-            <SignedOut>
-              <Link
-                to="/sign-up"
-                className="rounded-full bg-ink px-6 py-3 text-sm text-bg-mist transition-opacity hover:opacity-90"
-              >
-                Create your account
-              </Link>
-              <Link
-                to="/sign-in"
-                className="rounded-full border border-hairline px-6 py-3 text-sm text-ink transition-colors hover:bg-surface-card"
-              >
-                Sign in
-              </Link>
-            </SignedOut>
+        <motion.div variants={item} className="relative space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface-card px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-stone">
+            <ShieldCheck className="h-3.5 w-3.5 text-teal-deep" />
+            <span>Clinical Decision Support & Patient Care Platform</span>
           </div>
-          <div
-            className="pointer-events-none absolute -bottom-10 left-0 hidden h-10 w-64 sm:block"
-            aria-hidden="true"
-          >
-            <Thread
-              path="M0 20 C 60 0, 200 40, 260 12"
-              viewBox="0 0 260 40"
-              className="h-full w-full"
-              delay={0.6}
-              duration={0.9}
-            />
+
+          <h1 className="max-w-[18ch] font-display text-[42px] leading-[1.08] tracking-tight sm:text-[58px] text-ink">
+            Grounded clinical intelligence for doctors & patients.
+          </h1>
+
+          <p className="max-w-[48ch] text-base text-stone sm:text-lg leading-relaxed">
+            MedSys AI 2.0 connects attending doctors with their patients through role-based workflows, AI decision support, and doctor-signed advice.
+          </p>
+
+          {/* Differentiated Role Options */}
+          <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            {/* Doctor Entry Button */}
+            <Link
+              to="/sign-in/doctor"
+              className="group rounded-2xl border border-hairline bg-surface-card p-4 hover:border-ink transition-all flex items-center justify-between gap-4 shadow-xs"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-ink text-bg-mist flex items-center justify-center">
+                  <Stethoscope className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="font-display text-base text-ink block">Doctor Portal Login</span>
+                  <span className="font-mono text-[11px] text-stone">Assigned Patients & Consultations</span>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-stone group-hover:text-ink group-hover:translate-x-1 transition-all" />
+            </Link>
+
+            {/* Patient Entry Button */}
+            <Link
+              to="/sign-in/patient"
+              className="group rounded-2xl border border-hairline bg-surface-card p-4 hover:border-ink transition-all flex items-center justify-between gap-4 shadow-xs"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-teal-deep text-bg-mist flex items-center justify-center">
+                  <User className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="font-display text-base text-ink block">Patient Portal Login</span>
+                  <span className="font-mono text-[11px] text-stone">Care Plans, Medications & Chat</span>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-stone group-hover:text-ink group-hover:translate-x-1 transition-all" />
+            </Link>
           </div>
         </motion.div>
 
+        {/* Feature Cards Grid */}
         <motion.div
           variants={item}
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
         >
           {FEATURES.map((feature) => (
             <div
               key={feature.title}
-              className="rounded-2xl border border-hairline bg-surface-card p-6"
+              className="rounded-2xl border border-hairline bg-surface-card p-6 flex flex-col justify-between space-y-4"
             >
               <feature.icon
-                className="mb-4 h-5 w-5 text-teal-deep"
+                className="h-6 w-6 text-teal-deep"
                 strokeWidth={1.75}
               />
-              <h2 className="font-display text-lg tracking-tight">
-                {feature.title}
-              </h2>
-              <p className="mt-2 text-sm text-stone">{feature.body}</p>
+              <div>
+                <h2 className="font-display text-base tracking-tight text-ink">
+                  {feature.title}
+                </h2>
+                <p className="mt-2 text-xs text-stone leading-relaxed">{feature.body}</p>
+              </div>
             </div>
           ))}
         </motion.div>
-
-        <motion.div
-          variants={item}
-          className="rounded-2xl border border-hairline bg-surface-card p-8 text-center sm:p-12"
-        >
-          <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
-            Ready to see the whole picture?
-          </h2>
-          <p className="mx-auto mt-2 max-w-[40ch] text-sm text-stone">
-            Sign up in seconds — your data stays yours, grounded and private.
-          </p>
-          <SignedOut>
-            <Link
-              to="/sign-up"
-              className="mt-6 inline-block rounded-full bg-ink px-6 py-3 text-sm text-bg-mist transition-opacity hover:opacity-90"
-            >
-              Get started free
-            </Link>
-          </SignedOut>
-        </motion.div>
       </motion.main>
 
+      {/* Footer */}
       <footer className="mx-auto max-w-[1100px] px-5 pb-10 text-center font-mono text-[11px] text-stone sm:px-8">
-        MedSys AI — personal, local-first health intelligence.
+        MedSys AI 2.0 — Multi-tenant Clinical Decision Support & Patient Care Platform.
       </footer>
     </div>
   );

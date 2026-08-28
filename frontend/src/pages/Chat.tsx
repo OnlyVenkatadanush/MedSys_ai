@@ -46,6 +46,7 @@ export default function Chat() {
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendingDeepSearch, setSendingDeepSearch] = useState(false);
+  const [isModelSwitching, setIsModelSwitching] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [openSource, setOpenSource] = useState<ChatSource | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -115,8 +116,8 @@ export default function Chat() {
     });
   }
 
-  async function handleSend(content: string, deepSearch: boolean) {
-    if (!activeSessionId) return;
+  async function handleSend(content: string, deepSearch: boolean, images?: string[]) {
+    if (!activeSessionId || isModelSwitching) return;
     const userMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       role: "user",
@@ -128,7 +129,7 @@ export default function Chat() {
     setSendingDeepSearch(deepSearch);
     setSendError(null);
     try {
-      const reply = await sendSessionMessage(activeSessionId, content, deepSearch);
+      const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images);
       setMessages((prev) => [...prev, reply]);
       await Promise.all([refreshSessions(), listMyData().then(setAllSources)]);
     } catch (err) {
@@ -155,7 +156,12 @@ export default function Chat() {
       <PageHeader
         eyebrow="Chat"
         title="Ask MedSys"
-        action={<ModelIndicator status={modelStatus} />}
+        action={
+          <ModelIndicator
+            status={modelStatus}
+            onSwitchingChange={setIsModelSwitching}
+          />
+        }
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden lg:flex-row">
@@ -199,6 +205,11 @@ export default function Chat() {
 
           <div className="border-t border-hairline px-5 py-4 sm:px-8">
             <div className="mx-auto max-w-2xl">
+              {isModelSwitching && (
+                <p className="mb-2 font-mono text-[12px] text-amber-700">
+                  Model transition in progress — please wait for Ollama weights to finish loading...
+                </p>
+              )}
               {sendError && (
                 <p className="mb-2 text-[12px] text-clay-alert">{sendError}</p>
               )}
@@ -207,7 +218,7 @@ export default function Chat() {
                 availableSources={allSources}
                 selectedSourceIds={selectedSourceIds}
                 onToggleSource={handleToggleSource}
-                disabled={sending}
+                disabled={sending || isModelSwitching}
               />
             </div>
           </div>

@@ -56,7 +56,7 @@ async def check_reachable() -> bool:
         async with httpx.AsyncClient(timeout=3.0) as client:
             if settings.ollama_model:
                 try:
-                    res = await client.get(f"{settings.ollama_host}/api/tags", timeout=0.5)
+                    res = await client.get(f"{settings.ollama_host}/api/tags", timeout=2.0)
                     if res.status_code == 200:
                         return True
                 except (httpx.HTTPError, Exception):
@@ -150,19 +150,34 @@ async def _complete(
     max_tokens: int | None = None,
     timeout: float = 30.0,
     temperature: float | None = None,
+    images: list[str] | None = None,
 ) -> str:
-    """Tries local Ollama, falling back to Groq Cloud or Gemini Cloud on any connection error."""
-    messages = ([{"role": "system", "content": system}] if system else []) + [
-        {"role": "user", "content": user}
-    ]
+    """Tries local Ollama, falling back to Groq Cloud or Gemini Cloud on any connection error.
+    When images are provided, uses the pretrained vision model (hf.co/Mungert/medgemma-4b-pt-GGUF:Q4_K_M).
+    """
+    user_msg_dict: dict = {"role": "user", "content": user}
+    if images:
+        user_msg_dict["images"] = images
+
+    messages = ([{"role": "system", "content": system}] if system else []) + [user_msg_dict]
 
     async with httpx.AsyncClient(timeout=timeout) as client:
-        # 1. Try local Ollama if configured
-        if settings.ollama_model:
+        # 1. Try local Ollama if configured — select vision model if images attached
+        target_ollama_model = (
+            (settings.ollama_vision_model or settings.ollama_model)
+            if images
+            else settings.ollama_model
+        )
+        if target_ollama_model:
             try:
+                user_msg_dict: dict = {"role": "user", "content": user}
+                if images:
+                    user_msg_dict["images"] = images
+                ollama_messages = ([{"role": "system", "content": system}] if system else []) + [user_msg_dict]
+
                 ollama_payload: dict = {
-                    "model": settings.ollama_model,
-                    "messages": messages,
+                    "model": target_ollama_model,
+                    "messages": ollama_messages,
                     "stream": False,
                     "keep_alive": "30m",
                 }
@@ -176,7 +191,7 @@ async def _complete(
                 res = await client.post(
                     f"{settings.ollama_host}/api/chat",
                     json=ollama_payload,
-                    timeout=1.5,
+                    timeout=timeout,
                 )
                 res.raise_for_status()
                 text = res.json()["message"]["content"]
@@ -187,10 +202,26 @@ async def _complete(
 
         # 2. Try Groq Cloud models if API key is present
         if settings.groq_api_key:
-            models_to_try = [settings.groq_model, "qwen/qwen3.6-27b", "openai/gpt-oss-120b"]
+            models_to_try = (
+                ["llama-3.2-11b-vision-preview", settings.groq_vision_model]
+                if images
+                else [settings.groq_model, "qwen/qwen3.6-27b", "openai/gpt-oss-120b"]
+            )
             for g_model in models_to_try:
                 try:
-                    payload: dict = {"model": g_model, "messages": messages}
+                    if images:
+                        groq_content: list[dict] = [{"type": "text", "text": user}]
+                        for img in images:
+                            groq_content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
+                        groq_messages = ([{"role": "system", "content": system}] if system else []) + [
+                            {"role": "user", "content": groq_content}
+                        ]
+                    else:
+                        groq_messages = ([{"role": "system", "content": system}] if system else []) + [
+                            {"role": "user", "content": user}
+                        ]
+
+                    payload: dict = {"model": g_model, "messages": groq_messages}
                     if max_tokens:
                         payload["max_tokens"] = max_tokens
                     if temperature is not None:
@@ -199,7 +230,7 @@ async def _complete(
                         GROQ_CHAT_URL,
                         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
                         json=payload,
-                        timeout=min(timeout, 12.0),
+                        timeout=min(timeout, 15.0),
                     )
                     if res.status_code == 200:
                         text = res.json()["choices"][0]["message"]["content"].strip()
@@ -210,16 +241,24 @@ async def _complete(
 
         # 3. Fallback to Gemini Cloud directly without calling complete_gemini recursively
         if settings.gemini_api_key:
-            full_prompt = f"{system}\n\n{user}" if system else user
-            payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
-            res = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={settings.gemini_api_key}",
-                json=payload,
-                timeout=min(timeout, 4.0),
-            )
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-                return _SPECIAL_TOKEN.sub("", text).strip()
+            try:
+                full_prompt = f"{system}\n\n{user}" if system else user
+                parts: list[dict] = [{"text": full_prompt}]
+                if images:
+                    for img in images:
+                        parts.append({"inline_data": {"mime_type": "image/png", "data": img}})
+
+                payload = {"contents": [{"parts": parts}]}
+                res = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={settings.gemini_api_key}",
+                    json=payload,
+                    timeout=min(timeout, 10.0),
+                )
+                if res.status_code == 200:
+                    text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    return _SPECIAL_TOKEN.sub("", text).strip()
+            except Exception:
+                pass
 
         raise RuntimeError("No LLM backend (Ollama, Groq, or Gemini) is reachable.")
 
@@ -530,9 +569,11 @@ async def generate_general_tip() -> str:
     return tip
 
 
-async def generate_reply(message: str, system: str | None = None) -> str:
+async def generate_reply(
+    message: str, system: str | None = None, images: list[str] | None = None
+) -> str:
     try:
-        return await _complete(message, system=system, timeout=30.0)
+        return await _complete(message, system=system, timeout=60.0 if images else 30.0, images=images)
     except Exception as e:
         return f"Unable to reach AI backend: {e}"
 
@@ -626,3 +667,13 @@ async def extract_chat_entities(text: str) -> dict:
         and _is_real_medication_name(m["name"].strip())
     ]
     return {"symptoms": symptoms, "medications": medications}
+
+
+async def generate_completion(messages: list[dict], system_prompt: str | None = None) -> str:
+    """Convenience completion router for MedSys AI clinical and patient services."""
+    user_content = "\n".join([m.get("content", "") for m in messages if m.get("role") == "user"])
+    try:
+        return await complete_gemini(user=user_content, system=system_prompt)
+    except Exception:
+        return await _complete(user=user_content, system=system_prompt)
+

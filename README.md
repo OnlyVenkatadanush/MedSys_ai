@@ -1,4 +1,4 @@
-# MedSys AI
+![alt text](image.png)# MedSys AI
 
 A personal health companion that grounds its answers in your own medical documents, builds a live symptom knowledge graph from every conversation, and helps you find nearby care — all behind your own authenticated account.
 

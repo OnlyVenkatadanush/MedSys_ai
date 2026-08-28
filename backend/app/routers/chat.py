@@ -188,10 +188,8 @@ async def post_session_message(
     if memory_block:
         context_parts.append(memory_block)
 
-    # Condition Environment & AQI injection on respiratory / allergy queries only
-    respiratory_keywords = ("cough", "breathe", "breathing", "asthma", "allergy", "aqi", "pollution", "air", "throat", "rhinitis", "wheez")
-    is_respiratory_query = any(kw in body.content.lower() for kw in respiratory_keywords)
-    if env_snapshot and is_respiratory_query:
+    # Always include live local environment & AQI snapshot for comprehensive health grounding
+    if env_snapshot:
         pollutants_str = ", ".join(
             f"{p['label']}: {p['value']} {p['unit']}"
             for p in env_snapshot.get("pollutants", [])
@@ -208,16 +206,46 @@ async def post_session_message(
         context_text = "\n\n".join(chunk["text"] for chunk in context_chunks)
         context_parts.append(f"[MEDICAL RECORDS & CONVERSATION EXCERPTS]\n{context_text}")
 
-    user_prompt = body.content
-    system_instructions = (
-        "You are MedSys, a warm, caring, and deeply empathetic personal health companion. "
-        "Speak naturally, like a friendly family doctor.\n\n"
-        "STRICT CONVERSATIONAL RULES:\n"
-        "1. DO NOT RUSH TO TREAT: When a patient reports a symptom (e.g. 'I have a cough'), DO NOT generate medical tables, drug lists, or multi-step treatment guides.\n"
-        "2. ASK 1-2 CLARIFICATION QUESTIONS FIRST: Express warm empathy in 1 short sentence, then ask 1 or 2 focused diagnostic questions to understand their situation better.\n"
-        "3. ULTRA-CONCISE RESPONSE: Keep your response short (STRICTLY UNDER 50 WORDS TOTAL).\n"
-        "4. NO TABLES OR BULLET LISTS: Never output markdown tables or long bullet guides when asking clarification questions."
+    is_greeting = body.content.strip().lower() in (
+        "hi", "hello", "hey", "hi there", "hello there", "good morning", "good evening", "hey there", "hi medsys"
     )
+
+    if is_greeting:
+        system_instructions = (
+            "You are MedSys, a warm, caring, and deeply empathetic personal health companion. "
+            "Speak naturally, like a friendly family doctor.\n\n"
+            "GREETING RESPONSE STRUCTURE:\n"
+            "1. Warm Header: 'Hello [Patient Name]! 🌞' (or friendly emoji) followed by a short empathetic opening.\n"
+            "2. Symptom & Routine Check-in: Ask 1-2 focused questions about how they are feeling today, checking on any new/worsening symptoms or medication schedule changes.\n"
+            "3. Local Environmental Snapshot: Explicitly reference their location (e.g. Bengaluru), current weather, and live AQI score from [LIVE LOCAL ENVIRONMENT & AQI], providing practical comfort advice.\n"
+            "4. Supportive Closing: Warmly invite them to share symptom updates, medication questions, or anything on their mind."
+        )
+    else:
+        system_instructions = (
+            "You are MedSys, a warm, caring, and deeply clinical personal health companion. "
+            "When a patient reports a symptom or health concern, provide a comprehensive, beautifully structured medical assessment in clean Markdown:\n\n"
+            "RESPONSE STRUCTURE:\n"
+            "Start with a warm 1-sentence opening addressing the patient by name.\n\n"
+            "1️⃣ Quick snapshot of the key factors\n"
+            "Markdown table with columns: Factor | What it means for you\n"
+            "- Age / BMI\n"
+            "- Active conditions\n"
+            "- Current meds (with safe dosage notes)\n"
+            "- Environment (Location, AQI, Weather)\n\n"
+            "2️⃣ Why the symptom is likely behaving the way it is\n"
+            "Analyze interactions between their environment, active conditions, medications, and reported symptoms.\n\n"
+            "3️⃣ Practical, personalized steps you can take today\n"
+            "Markdown table with columns: What to do | How to do it | Why it helps\n"
+            "(Cover hydration, remedies, OTC safety & limits, positioning, vitals tracking).\n\n"
+            "4️⃣ Red-flag symptoms – when to seek immediate care\n"
+            "Table (Symptom | Why it matters) detailing emergency escalation red flags.\n\n"
+            "5️⃣ Next steps – what to do in the next 24–48 hours\n"
+            "Actionable timeline and tracking guidance.\n\n"
+            "6️⃣ Quick FAQ for you\n"
+            "Table (Question | Answer) addressing common patient concerns.\n\n"
+            "TL;DR\n"
+            "Bulleted summary of key takeaways and safety rules at the bottom."
+        )
 
     if context_parts:
         context_block = "\n\n".join(context_parts)
@@ -225,7 +253,7 @@ async def post_session_message(
 
     # Concurrently generate reply and extract chat entities
     reply_text, entities = await asyncio.gather(
-        model_router.generate_reply(user_prompt, system=system_instructions),
+        model_router.generate_reply(user_prompt, system=system_instructions, images=body.images),
         model_router.extract_chat_entities(body.content),
     )
 

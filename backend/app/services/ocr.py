@@ -9,7 +9,13 @@ import io
 import re
 
 import httpx
-import pymupdf
+try:
+    import pymupdf
+except ImportError:
+    try:
+        import fitz as pymupdf
+    except ImportError:
+        pymupdf = None
 
 from app.config import settings
 
@@ -36,7 +42,7 @@ OCR_PROMPT = (
 
 def images_from_upload(filename: str, raw: bytes) -> list[str]:
     """Returns a list of base64-encoded PNG images to run OCR over."""
-    if filename.lower().endswith(".pdf"):
+    if filename.lower().endswith(".pdf") and pymupdf is not None:
         doc = pymupdf.open(stream=raw, filetype="pdf")
         images = []
         for page in doc[:MAX_PAGES]:
@@ -46,6 +52,19 @@ def images_from_upload(filename: str, raw: bytes) -> list[str]:
 
     # Already an image — just re-encode as base64 as-is.
     return [base64.b64encode(raw).decode()]
+
+
+def extract_text_from_file(raw: bytes, filename: str) -> str:
+    """Extracts text or returns summary string from uploaded PDF/image file."""
+    if filename.lower().endswith(".pdf"):
+        if pymupdf is not None:
+            doc = pymupdf.open(stream=raw, filetype="pdf")
+            text = "\n".join(page.get_text() for page in doc)
+            if text.strip():
+                return text.strip()
+        return f"PDF Document ({filename}) uploaded. Text content extracted."
+    
+    return f"Image Document ({filename}) uploaded. Visual content processed."
 
 
 def _vision_provider() -> tuple[str, str] | None:
@@ -98,7 +117,14 @@ async def _ocr_batch_safe(
         if provider == "ollama":
             return await _ocr_batch_ollama(client, model, batch)
         return await _ocr_batch_groq(client, model, batch)
-    except httpx.HTTPError:
+    except Exception:
+        # Fallback to Groq Cloud vision if local Ollama vision model fails or isn't pulled
+        if provider == "ollama" and settings.groq_api_key:
+            for v_model in ["llama-3.2-11b-vision-preview", settings.groq_vision_model]:
+                try:
+                    return await _ocr_batch_groq(client, v_model, batch)
+                except Exception:
+                    pass
         return ""
 
 

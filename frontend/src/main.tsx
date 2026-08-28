@@ -7,16 +7,16 @@ import App from "./App.tsx";
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-if (!CLERK_PUBLISHABLE_KEY) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY — set it in frontend/.env.local");
-}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
+      {CLERK_PUBLISHABLE_KEY ? (
+        <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
+          <App />
+        </ClerkProvider>
+      ) : (
         <App />
-      </ClerkProvider>
+      )}
     </BrowserRouter>
   </StrictMode>,
 );

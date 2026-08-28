@@ -90,6 +90,7 @@ class ChatSessionSourcesIn(BaseModel):
 class ChatMessageIn(BaseModel):
     content: str
     deepSearch: bool = False
+    images: list[str] | None = None
 
 
 class ModelStatus(BaseModel):
