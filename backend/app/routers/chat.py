@@ -46,27 +46,31 @@ async def _remember_message(session_id: str, role: str, content: str) -> None:
 
 
 @router.get("/sessions", response_model=list[ChatSession])
-def list_sessions() -> list[dict]:
+def list_sessions(user_id: str = Depends(require_clerk_auth)) -> list[dict]:
     db = get_db()
-    return list(db.chat_sessions.find({}, {"_id": 0}).sort("updatedAt", -1))
+    sessions = list(db.chat_sessions.find({"$or": [{"clerkUserId": user_id}, {"clerkUserId": {"$exists": False}}]}, {"_id": 0, "clerkUserId": 0}).sort("updatedAt", -1))
+    return sessions
 
 
 @router.post("/sessions", response_model=ChatSession)
-def create_session(body: ChatSessionIn) -> dict:
+def create_session(body: ChatSessionIn, user_id: str = Depends(require_clerk_auth)) -> dict:
     db = get_db()
     session = {
         "id": _new_id("sess"),
+        "clerkUserId": user_id,
         "title": body.title or "New chat",
         "createdAt": _now(),
         "updatedAt": _now(),
         "sourceIds": [],
     }
     db.chat_sessions.insert_one({**session})
-    return session
+    res = {**session}
+    res.pop("clerkUserId", None)
+    return res
 
 
 @router.put("/sessions/{session_id}/sources", response_model=ChatSession)
-def set_session_sources(session_id: str, body: ChatSessionSourcesIn) -> dict:
+def set_session_sources(session_id: str, body: ChatSessionSourcesIn, user_id: str = Depends(require_clerk_auth)) -> dict:
     db = get_db()
     session = db.chat_sessions.find_one({"id": session_id})
     if not session:
@@ -78,7 +82,7 @@ def set_session_sources(session_id: str, body: ChatSessionSourcesIn) -> dict:
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessage])
-def get_session_messages(session_id: str) -> list[dict]:
+def get_session_messages(session_id: str, user_id: str = Depends(require_clerk_auth)) -> list[dict]:
     db = get_db()
     return list(
         db.chat_messages.find({"sessionId": session_id}, {"_id": 0}).sort("createdAt", 1)
@@ -297,7 +301,7 @@ async def post_session_message(
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
-def delete_session(session_id: str) -> None:
+def delete_session(session_id: str, user_id: str = Depends(require_clerk_auth)) -> None:
     db = get_db()
     result = db.chat_sessions.delete_one({"id": session_id})
     if result.deleted_count == 0:
@@ -306,9 +310,9 @@ def delete_session(session_id: str) -> None:
 
 
 @router.get("/sources", response_model=list[ChatSource])
-def get_sources() -> list[dict]:
+def get_sources(user_id: str = Depends(require_clerk_auth)) -> list[dict]:
     db = get_db()
-    docs = list(db.sources.find({}, {"_id": 0}).sort("uploadedAt", -1))
+    docs = list(db.sources.find({"$or": [{"clerkUserId": user_id}, {"clerkUserId": {"$exists": False}}]}, {"_id": 0}).sort("uploadedAt", -1))
     return docs if docs else CHAT_SOURCES
 
 

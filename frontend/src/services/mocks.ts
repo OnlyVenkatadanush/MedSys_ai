@@ -185,11 +185,11 @@ export const mockFacilities: Facility[] = [
 ];
 
 export const mockProfile: ProfileRecord = {
-  fullName: "Jordan Reyes",
-  age: 27,
-  weightKg: 74,
-  heightCm: 178,
-  bmi: 23.4,
+  fullName: "John Doe",
+  age: 30,
+  weightKg: 70,
+  heightCm: 170,
+  bmi: 24.2,
   bloodGroup: "O+",
   conditions: ["Seasonal allergic rhinitis"],
   medications: [{ name: "Cetirizine", dosage: "10mg, as needed" }],

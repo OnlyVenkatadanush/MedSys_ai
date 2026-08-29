@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useUser } from "@clerk/clerk-react";
 import { PageHeader } from "@/components/PageHeader";
 import { fetchPatientDashboard, logMedicationDose } from "@/services/clinicalService";
+import { getProfile } from "@/services/profile";
 import type { ConsultationSession, MedicationSchedule } from "@/types";
 
 export const PatientDashboard: React.FC = () => {
+  const { user } = useUser();
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [patientName, setPatientName] = useState<string>("");
 
   useEffect(() => {
     loadDashboard();
+    getProfile()
+      .then((p) => {
+        if (p?.fullName) {
+          setPatientName(p.fullName.split(" ")[0]);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadDashboard = async () => {
@@ -38,11 +49,13 @@ export const PatientDashboard: React.FC = () => {
     }
   };
 
+  const displayName = patientName || user?.firstName || user?.fullName?.split(" ")[0] || "Patient";
+
   return (
     <div className="space-y-8 pb-16">
       <PageHeader
         eyebrow="Personal Care Portal"
-        title="Welcome back, John."
+        title={`Welcome back, ${displayName}.`}
         meta="View your doctor-approved care plan, track medication schedules, and consult your AI assistant."
         action={
           <div className="flex items-center gap-2">

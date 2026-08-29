@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import { useUser } from "@clerk/clerk-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ProfileForm } from "@/components/profile/ProfileForm";
+import { DoctorProfileView, DEFAULT_DOCTOR_PROFILE } from "@/components/profile/DoctorProfileView";
+import type { DoctorProfileData } from "@/components/profile/DoctorProfileView";
 import { LoadError } from "@/components/LoadError";
 import { getProfile, saveProfile } from "@/services/profile";
+import { getActiveRoleOverride } from "@/services/client";
 import type { ProfileInput } from "@/services/profile";
 import type { ProfileRecord } from "@/types";
 
@@ -15,6 +19,17 @@ function getBmiCategory(bmi: number): { label: string; colorClass: string; bgCla
 }
 
 export default function Profile() {
+  const { user } = useUser();
+  const activeRoleOverride = getActiveRoleOverride();
+
+  const userRole: "doctor" | "patient" =
+    (user?.publicMetadata?.role as "doctor" | "patient") ||
+    (user?.unsafeMetadata?.role as "doctor" | "patient") ||
+    (activeRoleOverride as "doctor" | "patient") ||
+    "doctor";
+
+  const isDoctor = userRole === "doctor";
+
   const [profile, setProfile] = useState<ProfileRecord | null | undefined>(undefined);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -24,8 +39,27 @@ export default function Profile() {
   const [copied, setCopied] = useState(false);
   const [showCallModal, setShowCallModal] = useState(false);
 
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData>(() => {
+    try {
+      const saved = localStorage.getItem("medsys_doctor_profile");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      ...DEFAULT_DOCTOR_PROFILE,
+      fullName: user?.fullName || DEFAULT_DOCTOR_PROFILE.fullName,
+      email: user?.primaryEmailAddress?.emailAddress || DEFAULT_DOCTOR_PROFILE.email,
+    };
+  });
+
+  const handleUpdateDoctor = (updated: DoctorProfileData) => {
+    setDoctorProfile(updated);
+    try {
+      localStorage.setItem("medsys_doctor_profile", JSON.stringify(updated));
+    } catch {}
+  };
 
   useEffect(() => {
+    if (isDoctor) return;
     let active = true;
     setLoadError(false);
     getProfile()
@@ -40,7 +74,7 @@ export default function Profile() {
     return () => {
       active = false;
     };
-  }, [retryKey]);
+  }, [retryKey, isDoctor]);
 
   async function handleSave(input: ProfileInput) {
     setSaving(true);
@@ -62,43 +96,19 @@ export default function Profile() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  if (loadError) {
+  // RENDER DOCTOR PROFILE
+  if (isDoctor) {
     return (
-      <div>
-        <PageHeader eyebrow="Profile" title="Record" />
-        <LoadError
-          message="Couldn't load your profile — the backend may be unreachable."
-          onRetry={() => setRetryKey((k) => k + 1)}
-        />
-      </div>
-    );
-  }
-
-  if (profile === undefined) {
-    return (
-      <div>
-        <PageHeader eyebrow="Profile" title="Record" />
-        <p className="px-5 py-16 text-center text-sm text-stone sm:px-8">
-          Loading your record…
-        </p>
-      </div>
-    );
-  }
-
-  if (editing) {
-    return (
-      <div>
+      <div className="mx-auto max-w-6xl px-5 pt-6 sm:px-8">
         <PageHeader
-          eyebrow="Profile"
-          title={profile ? profile.fullName : "Set up your record"}
-          meta={profile ? "Edit record" : "Tell us about yourself to get started"}
+          eyebrow="Doctor Credentials & Practice Passport"
+          title="Clinical Profile"
+          meta="Authorized Clinician Account • Active e-Prescribe Status"
         />
-        <ProfileForm
-          initial={profile}
-          saving={saving}
-          error={error}
-          onCancel={profile ? () => setEditing(false) : undefined}
-          onSave={handleSave}
+        <DoctorProfileView
+          doctorData={doctorProfile}
+          clerkUser={user}
+          onUpdateDoctor={handleUpdateDoctor}
         />
       </div>
     );
@@ -107,12 +117,26 @@ export default function Profile() {
   if (!profile) return null;
 
   const bmiCat = getBmiCategory(profile.bmi ?? 22.5);
-  const initials = profile.fullName
+
+  const rawName = profile?.fullName?.trim();
+  const isGeneric = !rawName || rawName.toLowerCase() === "patient";
+  const displayName =
+    (!isGeneric ? rawName : "") ||
+    user?.fullName ||
+    (user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "") ||
+    (isDoctor ? "Dr. Sarah Smith" : "John Doe");
+
+  const initials = displayName
     .split(" ")
     .map((n) => n[0])
+    .filter(Boolean)
     .join("")
     .substring(0, 2)
-    .toUpperCase() || "P";
+    .toUpperCase() || "JD";
+
+  const validMedications = (profile.medications || []).filter(
+    (m) => m && m.name && m.name.trim() !== "..." && m.name.trim() !== ""
+  );
 
   return (
     <div className="pb-20">
@@ -139,15 +163,23 @@ export default function Profile() {
         <div className="relative overflow-hidden rounded-2xl border border-hairline bg-surface-card p-6 shadow-sm sm:p-8">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-5">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-teal-deep text-xl font-bold tracking-wider text-bg-mist shadow-md">
-                {initials}
-              </div>
+              {user?.imageUrl ? (
+                <img
+                  src={user.imageUrl}
+                  alt={displayName}
+                  className="h-16 w-16 rounded-2xl border-2 border-teal-deep object-cover shadow-md shrink-0"
+                />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-teal-deep text-xl font-bold tracking-wider text-bg-mist shadow-md">
+                  {initials}
+                </div>
+              )}
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-                  {profile.fullName}
+                  {displayName}
                 </h1>
                 <p className="mt-1 text-[13px] text-stone">
-                  {profile.age} yrs • {profile.heightCm} cm • {profile.weightKg} kg
+                  {profile.age || 30} yrs • {profile.heightCm || 170} cm • {profile.weightKg || 70} kg
                 </p>
               </div>
             </div>
@@ -360,17 +392,17 @@ export default function Profile() {
                   </h2>
                 </div>
                 <span className="rounded-full bg-bg-mist px-2.5 py-0.5 font-mono text-[11px] text-stone">
-                  {profile.medications.length} Prescribed
+                  {validMedications.length} Prescribed
                 </span>
               </div>
 
-              {profile.medications.length === 0 ? (
+              {validMedications.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-hairline py-8 text-center">
                   <p className="text-[13px] text-stone">No active medications on record.</p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {profile.medications.map((m, idx) => (
+                  {validMedications.map((m, idx) => (
                     <div
                       key={idx}
                       className="flex items-center justify-between rounded-xl border border-hairline bg-bg-mist/50 p-3.5 transition-all hover:border-teal-deep/30"

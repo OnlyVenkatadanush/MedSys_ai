@@ -126,7 +126,7 @@ FACILITIES = [
 ]
 
 DEFAULT_PROFILE = {
-    "fullName": "Patient",
+    "fullName": "John Doe",
     "age": 30,
     "gender": "prefer_not_to_say",
     "heightCm": 170,

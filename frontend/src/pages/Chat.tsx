@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { PageHeader } from "@/components/PageHeader";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { Composer } from "@/components/chat/Composer";
@@ -19,8 +18,10 @@ import {
   sendSessionMessage,
   setSessionSources,
 } from "@/services/chat";
+import { sendDoctorCopilotQuery } from "@/services/clinicalService";
 import { listMyData } from "@/services/mydata";
 import { ApiError } from "@/services/client";
+import { User } from "lucide-react";
 import type { ChatMessage, ChatSession, ChatSource, ModelStatus } from "@/types";
 
 function describeSendError(err: unknown): string {
@@ -36,7 +37,17 @@ function describeSendError(err: unknown): string {
   return "Couldn't get a reply — the backend may be unreachable. Check it's running, then try again.";
 }
 
-export default function Chat() {
+export interface ChatProps {
+  title?: string;
+  eyebrow?: string;
+  doctorMode?: boolean;
+}
+
+export default function Chat({
+  title = "Ask MedSys",
+  eyebrow = "CHAT",
+  doctorMode = false,
+}: ChatProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -49,6 +60,8 @@ export default function Chat() {
   const [isModelSwitching, setIsModelSwitching] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [openSource, setOpenSource] = useState<ChatSource | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<string>("pat_01");
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const item = reduced ? riseInReduced : riseIn;
@@ -104,7 +117,6 @@ export default function Chat() {
           setActiveSessionId(remaining[0].id);
           setMessages([]);
         } else {
-          // No sessions left — spin up a fresh one
           createChatSession().then((created) => {
             setSessions([created]);
             setActiveSessionId(created.id);
@@ -128,9 +140,23 @@ export default function Chat() {
     setSending(true);
     setSendingDeepSearch(deepSearch);
     setSendError(null);
+
     try {
-      const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images);
-      setMessages((prev) => [...prev, reply]);
+      if (doctorMode) {
+        // Clinical Copilot query
+        const res = await sendDoctorCopilotQuery(selectedPatient, content);
+        const replyMessage: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          role: "assistant",
+          content: res.reply,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, replyMessage]);
+      } else {
+        // Patient session chat
+        const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images);
+        setMessages((prev) => [...prev, reply]);
+      }
       await Promise.all([refreshSessions(), listMyData().then(setAllSources)]);
     } catch (err) {
       setSendError(describeSendError(err));
@@ -152,19 +178,9 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-dvh max-w-full flex-col overflow-hidden">
-      <PageHeader
-        eyebrow="Chat"
-        title="Ask MedSys"
-        action={
-          <ModelIndicator
-            status={modelStatus}
-            onSwitchingChange={setIsModelSwitching}
-          />
-        }
-      />
-
+    <div className="flex h-dvh max-w-full flex-col overflow-hidden bg-[#f4f2eb] text-stone-900 font-sans">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden lg:flex-row">
+        {/* Left Column: Sessions List */}
         <SessionList
           sessions={sessions}
           activeId={activeSessionId}
@@ -173,22 +189,61 @@ export default function Chat() {
           onSelect={setActiveSessionId}
           onNewChat={handleNewChat}
           onDelete={handleDeleteSession}
+          title={title}
+          eyebrow={eyebrow}
         />
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
+        {/* Center Main Chat Column */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-[#f4f2eb]">
+          {/* Top Bar with Model Status */}
+          <div className="flex items-center justify-between gap-4 w-full px-6 pt-5 pb-3 border-b border-stone-300/40 shrink-0">
+            {doctorMode ? (
+              <div className="flex items-center gap-2 text-xs font-mono text-stone-700 shrink-0">
+                <User className="h-3.5 w-3.5 text-stone-800" />
+                <span className="font-semibold uppercase tracking-wider text-stone-600">Patient:</span>
+                <select
+                  value={selectedPatient}
+                  onChange={(e) => setSelectedPatient(e.target.value)}
+                  className="rounded-xl border border-stone-300/80 bg-white px-3 py-1 font-mono text-xs font-semibold text-stone-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-stone-800"
+                >
+                  <option value="pat_01">John Doe (pat_01)</option>
+                  <option value="pat_02">Emma Watson (pat_02)</option>
+                  <option value="pat_03">Robert Chen (pat_03)</option>
+                </select>
+              </div>
+            ) : (
+              <div className="text-xs font-mono text-stone-500 tracking-wider uppercase font-semibold">
+                AI Clinical Companion
+              </div>
+            )}
 
+            <div className="flex items-center justify-end shrink-0 ml-auto">
+              <ModelIndicator
+                status={modelStatus}
+                onSwitchingChange={setIsModelSwitching}
+              />
+            </div>
+          </div>
+
+          {/* Scrollable Message Feed */}
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8">
             <motion.div
-              className="mx-auto flex max-w-2xl flex-col gap-6"
+              className="mx-auto flex max-w-3xl flex-col gap-6"
               variants={staggerContainer(0.06)}
               initial="hidden"
               animate="show"
             >
               {messages.length === 0 && !sending && (
-                <p className="py-16 text-center text-[13px] text-stone">
-                  Start the conversation — ask about your symptoms, vitals, or reports.
-                </p>
+                <div className="py-24 text-center">
+                  <p className="font-display text-2xl text-stone-400 font-normal mb-2">
+                    How can I assist your health today?
+                  </p>
+                  <p className="text-xs font-mono text-stone-500">
+                    Ask about symptoms, vitals, drug interactions, or upload medical reports.
+                  </p>
+                </div>
               )}
+
               {messages.map((message) => (
                 <motion.div key={message.id} variants={item}>
                   <MessageBubble
@@ -197,21 +252,23 @@ export default function Chat() {
                   />
                 </motion.div>
               ))}
+
               {sending && (
                 <TypingIndicator label={sendingDeepSearch ? "Searching the web…" : undefined} />
               )}
             </motion.div>
           </div>
 
-          <div className="border-t border-hairline px-5 py-4 sm:px-8">
-            <div className="mx-auto max-w-2xl">
+          {/* Floating Pill Composer Footer */}
+          <div className="px-5 py-4 sm:px-8 shrink-0">
+            <div className="mx-auto max-w-3xl">
               {isModelSwitching && (
-                <p className="mb-2 font-mono text-[12px] text-amber-700">
-                  Model transition in progress — please wait for Ollama weights to finish loading...
+                <p className="mb-2 font-mono text-xs text-amber-700 text-center">
+                  Model transition in progress — loading Ollama weights into VRAM...
                 </p>
               )}
               {sendError && (
-                <p className="mb-2 text-[12px] text-clay-alert">{sendError}</p>
+                <p className="mb-2 text-xs text-red-600 text-center font-medium">{sendError}</p>
               )}
               <Composer
                 onSend={handleSend}
@@ -224,6 +281,7 @@ export default function Chat() {
           </div>
         </div>
 
+        {/* Right Column: Grounded On Sources Panel */}
         <SourcesPanel
           sources={groundedSources}
           open={sourcesPanelOpen}
@@ -236,3 +294,4 @@ export default function Chat() {
     </div>
   );
 }
+

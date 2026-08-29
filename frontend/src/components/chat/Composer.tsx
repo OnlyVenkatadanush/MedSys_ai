@@ -124,14 +124,15 @@ export function Composer({
               setAttachedImageName(null);
               if (fileInputRef.current) fileInputRef.current.value = "";
             }}
-            className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-stone hover:bg-teal-deep/20 hover:text-ink"
+            className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-stone-500 hover:bg-stone-200 hover:text-stone-900"
           >
             <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
-      <div className="flex items-end gap-2 rounded-2xl border border-hairline bg-surface-card p-2 pl-3 focus-within:border-teal-deep">
+      {/* Floating Pill Input Bar */}
+      <div className="flex items-center gap-2.5 rounded-full border border-stone-300/90 bg-white/95 backdrop-blur-md px-4 py-2 shadow-md transition-colors focus-within:border-stone-800">
         <input
           type="file"
           accept="image/*"
@@ -140,34 +141,21 @@ export function Composer({
           className="hidden"
         />
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          title="Attach an image (X-Ray, CT, skin lesion, medical scan) for MedGemma vision analysis"
-          className={[
-            "mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
-            attachedImage
-              ? "bg-teal-deep/20 text-teal-deep"
-              : "text-stone hover:bg-bg-mist hover:text-ink",
-          ].join(" ")}
-        >
-          <ImageIcon className="h-4 w-4" strokeWidth={1.75} />
-        </button>
-
-        <div className="relative" ref={pickerRef}>
+        {/* Paperclip Source Picker */}
+        <div className="relative shrink-0" ref={pickerRef}>
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
             aria-expanded={pickerOpen}
             aria-label="Choose documents to ground this chat on"
             className={[
-              "mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+              "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
               selectedSourceIds.length > 0
-                ? "bg-teal-deep/15 text-teal-deep"
-                : "text-stone hover:bg-bg-mist hover:text-ink",
+                ? "bg-[#191c24] text-white"
+                : "text-stone-500 hover:bg-stone-100 hover:text-stone-900",
             ].join(" ")}
           >
-            <Paperclip className="h-4 w-4" strokeWidth={1.75} />
+            <Paperclip className="h-4 w-4" strokeWidth={2} />
           </button>
           {pickerOpen && (
             <SourcePicker
@@ -178,22 +166,39 @@ export function Composer({
           )}
         </div>
 
+        {/* Deep Search Toggle */}
         <button
           type="button"
           onClick={() => setDeepSearch((v) => !v)}
           aria-pressed={deepSearch}
           title="Deep search — search and read the web for this question"
           className={[
-            "mb-1.5 flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors duration-150",
+            "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors cursor-pointer",
             deepSearch
-              ? "bg-teal-deep text-bg-mist"
-              : "text-stone hover:bg-bg-mist hover:text-ink",
+              ? "bg-[#191c24] text-white border-stone-800"
+              : "bg-stone-100/90 text-stone-700 border-stone-300/80 hover:bg-stone-200/80",
           ].join(" ")}
         >
-          <Globe className="h-4 w-4" strokeWidth={1.75} />
+          <Globe className="h-3.5 w-3.5" strokeWidth={2} />
           <span className="hidden sm:inline">Deep search</span>
         </button>
 
+        {/* Image Attachment Button */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach medical scan / image"
+          className={[
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors",
+            attachedImage
+              ? "bg-[#191c24] text-white"
+              : "text-stone-500 hover:bg-stone-100 hover:text-stone-900",
+          ].join(" ")}
+        >
+          <ImageIcon className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+
+        {/* Text Input */}
         <textarea
           rows={1}
           value={value}
@@ -206,46 +211,49 @@ export function Composer({
           }}
           placeholder={
             transcribing
-              ? "Transcribing…"
+              ? "Transcribing voice…"
               : attachedImage
               ? "Ask a question about this image..."
-              : "Ask about your symptoms, vitals, or reports…"
+              : "Ask about your symptoms, vitals, or reports..."
           }
           disabled={transcribing}
-          className="max-h-32 flex-1 resize-none bg-transparent py-1.5 text-[14px] text-ink placeholder:text-stone/70 focus:outline-none disabled:opacity-60"
+          className="max-h-24 flex-1 resize-none bg-transparent py-1.5 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none disabled:opacity-60 font-sans"
         />
 
+        {/* Voice Recording Button */}
         <button
           type="button"
           onClick={handleMicClick}
           disabled={transcribing}
           aria-pressed={recording}
-          aria-label={recording ? "Stop recording" : "Record a voice message"}
+          aria-label={recording ? "Stop recording" : "Record voice message"}
           className={[
-            "mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150 disabled:opacity-50",
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
             recording
-              ? "animate-pulse bg-clay-alert text-bg-mist"
-              : "text-stone hover:bg-bg-mist hover:text-ink",
+              ? "animate-pulse bg-red-600 text-white"
+              : "text-stone-500 hover:bg-stone-100 hover:text-stone-900",
           ].join(" ")}
         >
           {transcribing ? (
-            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
           ) : recording ? (
-            <Square className="h-3.5 w-3.5" strokeWidth={1.75} fill="currentColor" />
+            <Square className="h-3.5 w-3.5" strokeWidth={2} fill="currentColor" />
           ) : (
-            <Mic className="h-4 w-4" strokeWidth={1.75} />
+            <Mic className="h-4 w-4" strokeWidth={2} />
           )}
         </button>
 
+        {/* Send Button */}
         <button
           type="submit"
           disabled={(!value.trim() && !attachedImage) || disabled}
-          className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-deep text-bg-mist transition-opacity disabled:opacity-30"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#191c24] text-white transition-opacity hover:bg-[#2c313d] disabled:opacity-30 shadow-xs"
           aria-label="Send message"
         >
-          <ArrowUp className="h-4 w-4" strokeWidth={2} />
+          <ArrowUp className="h-4 w-4" strokeWidth={2.2} />
         </button>
       </div>
     </form>
   );
 }
+

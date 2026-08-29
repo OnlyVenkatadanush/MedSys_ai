@@ -297,40 +297,40 @@ export function ModelIndicator({ status, onSwitchingChange }: ModelIndicatorProp
             }
           }}
           className={[
-            "inline-flex items-center gap-2 rounded-xl border border-hairline bg-surface-card/80 px-3 py-1.5 font-mono text-[12px] text-ink shadow-2xs backdrop-blur-xs transition-all hover:border-teal-deep/50 hover:bg-surface-card",
-            isSwitching ? "border-amber-400/60 bg-amber-500/5 text-amber-900" : "",
+            "inline-flex items-center gap-1.5 font-mono text-xs text-stone-600 transition-colors hover:text-stone-950 py-1 px-2 rounded-lg hover:bg-stone-200/50 min-w-0 max-w-full shrink",
+            isSwitching ? "text-amber-700 font-medium" : "",
           ].join(" ")}
           title="Click to change MedGemma model specialty"
         >
           <span
             className={[
-              "h-2 w-2 rounded-full transition-colors",
+              "h-2 w-2 rounded-full shrink-0 transition-colors",
               isSwitching
                 ? "animate-ping bg-amber-500"
                 : status?.reachable !== false
-                ? "bg-teal-deep"
-                : "bg-clay-alert",
+                ? "bg-emerald-500"
+                : "bg-red-500",
             ].join(" ")}
           />
 
-          <span className="truncate max-w-[240px] sm:max-w-[360px]">
+          <span className="truncate min-w-0 max-w-[130px] sm:max-w-[200px] md:max-w-[280px] lg:max-w-[340px]">
             {isSwitching ? (
               <span className="flex items-center gap-1.5 font-medium text-amber-700">
-                <Loader2 className="h-3 w-3 animate-spin text-amber-600" />
-                Switching model… ({secondsRemaining}s)
+                <Loader2 className="h-3 w-3 animate-spin text-amber-600 shrink-0" />
+                <span className="truncate">Switching ({secondsRemaining}s)</span>
               </span>
             ) : (
-              <span>
-                <span className="text-stone">{providerLabel} · </span>
-                <span className="font-semibold text-ink">{activeModelOption.id}</span>
+              <span className="truncate" title={activeModelOption.id}>
+                <span className="text-stone-500">{providerLabel} · </span>
+                <span className="font-semibold text-stone-800">{activeModelOption.name || activeModelOption.id}</span>
               </span>
             )}
           </span>
 
           <ChevronDown
             className={[
-              "h-3.5 w-3.5 shrink-0 text-stone transition-transform duration-200",
-              dropdownOpen ? "rotate-180 text-teal-deep" : "",
+              "h-3.5 w-3.5 shrink-0 text-stone-500 transition-transform duration-200",
+              dropdownOpen ? "rotate-180 text-stone-900" : "",
             ].join(" ")}
           />
         </button>

@@ -24,13 +24,21 @@ export function MessageBubble({
       animate="show"
       className={`flex min-w-0 max-w-full ${isUser ? "justify-end" : "justify-start"}`}
     >
-      <div className={`max-w-[90%] sm:max-w-[85%] min-w-0 ${isUser ? "text-right" : "text-left"}`}>
+      <div className={`max-w-[92%] sm:max-w-[88%] min-w-0 ${isUser ? "text-right" : "text-left"}`}>
         {isUser ? (
-          <div className="rounded-2xl rounded-tr-sm bg-surface-card px-4 py-3">
-            <p className="text-[14px] leading-relaxed text-ink">{message.content || message.message || ""}</p>
+          <div className="inline-block rounded-2xl bg-[#191c24] px-4 py-3 text-left shadow-xs">
+            <p className="text-[14px] leading-relaxed text-white font-medium">
+              {message.content || message.message || ""}
+            </p>
           </div>
         ) : (
-          <div className={`border-l-[2px] ${message.isRedFlag ? "border-red-500 bg-red-50/10 p-3 rounded-r-lg" : "border-teal-deep"} pl-4 text-[14px] leading-relaxed text-ink/90 min-w-0 max-w-full overflow-hidden`}>
+          <div
+            className={`min-w-0 max-w-full overflow-hidden text-[14px] leading-relaxed text-stone-900 ${
+              message.isRedFlag
+                ? "rounded-2xl border-2 border-red-500 bg-red-50/50 p-4"
+                : ""
+            }`}
+          >
             <Markdown content={message.content || message.message || ""} />
 
             {message.quickOptions && message.quickOptions.length > 0 && (
@@ -39,7 +47,7 @@ export function MessageBubble({
                   <button
                     key={idx}
                     onClick={() => onSelectOption?.(option)}
-                    className="rounded-full border border-hairline bg-surface-card px-3 py-1 text-xs text-ink transition-colors hover:bg-bg-mist"
+                    className="rounded-full border border-stone-300/80 bg-white/80 px-3.5 py-1 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-200/80"
                   >
                     {option}
                   </button>
@@ -48,8 +56,11 @@ export function MessageBubble({
             )}
           </div>
         )}
-        <span className="mt-1 block font-mono text-[10px] text-stone">{time}</span>
+        <span className="mt-1.5 block font-mono text-[11px] text-stone-500">
+          {time}
+        </span>
       </div>
     </motion.div>
   );
 }
+

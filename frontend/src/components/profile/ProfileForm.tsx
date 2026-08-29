@@ -30,7 +30,13 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm({ initial, saving, error, onCancel, onSave }: ProfileFormProps) {
-  const [form, setForm] = useState<ProfileInput>(initial ? { ...initial } : EMPTY);
+  const [form, setForm] = useState<ProfileInput>(() => {
+    const base = initial ? { ...initial } : EMPTY;
+    if (!base.fullName || base.fullName.trim().toLowerCase() === "patient") {
+      base.fullName = "John Doe";
+    }
+    return base;
+  });
 
   function update<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));

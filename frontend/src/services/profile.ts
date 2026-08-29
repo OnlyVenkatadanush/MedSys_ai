@@ -9,9 +9,14 @@ function computeBmi(weightKg: number, heightCm: number): number {
   return heightM > 0 ? Math.round((weightKg / (heightM * heightM)) * 10) / 10 : 0;
 }
 
-/** Returns `null` when the signed-in user hasn't saved a profile yet. */
 export async function getProfile(): Promise<ProfileRecord | null> {
-  if (isMockMode) return mockDelay(mockProfile);
+  if (isMockMode) {
+    try {
+      const saved = localStorage.getItem("medsys_patient_profile");
+      if (saved) return mockDelay(JSON.parse(saved));
+    } catch {}
+    return mockDelay(mockProfile);
+  }
   try {
     return await apiFetch<ProfileRecord>("/profile");
   } catch (err) {
@@ -21,8 +26,13 @@ export async function getProfile(): Promise<ProfileRecord | null> {
 }
 
 export async function saveProfile(input: ProfileInput): Promise<ProfileRecord> {
+  const computedBmi = computeBmi(input.weightKg ?? 70, input.heightCm ?? 170);
+  const record: ProfileRecord = { ...input, bmi: computedBmi };
   if (isMockMode) {
-    return mockDelay({ ...input, bmi: computeBmi(input.weightKg ?? 70, input.heightCm ?? 170) });
+    try {
+      localStorage.setItem("medsys_patient_profile", JSON.stringify(record));
+    } catch {}
+    return mockDelay(record);
   }
   return apiFetch<ProfileRecord>("/profile", {
     method: "PUT",

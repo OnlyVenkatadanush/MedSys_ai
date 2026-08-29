@@ -64,7 +64,7 @@ export function NavShell() {
   return (
     <div className="min-h-dvh bg-bg-mist text-ink font-sans">
       <CommandPalette />
-      <div className="mx-auto flex min-h-dvh max-w-[1400px]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[1800px]">
         {/* Left Sidebar */}
         <aside className="sticky top-0 hidden h-dvh w-[80px] shrink-0 flex-col items-center gap-1 border-r border-hairline py-6 lg:flex xl:w-[240px] xl:items-stretch xl:px-4">
           {/* Logo Brand */}
