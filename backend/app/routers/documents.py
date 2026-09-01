@@ -1,7 +1,7 @@
 """Document Upload & Hybrid Lab Report Storage Router.
 
 Raw OCR document -> MongoDB (raw_lab_documents)
-Normalized lab metrics -> SQLite (lab_reports & lab_metrics)
+Normalized lab metrics -> MongoDB (lab_reports & lab_metrics)
 """
 
 from datetime import datetime, timezone
@@ -9,7 +9,7 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 
-from app.db_sqlite import get_sqlite_conn
+from app.db import get_patient_db
 from app.models_v2 import LabMetric, LabReportRecord
 from app.services.audit_service import log_audit_event
 from app.services.clerk_auth import AuthenticatedUser, get_current_user
@@ -24,18 +24,15 @@ async def list_lab_reports(
     patient_id: str = "pat_01",
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Lists uploaded lab reports for target patient from SQLite medsys.db."""
+    """Lists uploaded lab reports for target patient from MongoDB Atlas."""
     target_id = patient_id if user.role == "doctor" else user.user_id
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
-    cursor.execute("SELECT * FROM lab_reports WHERE patient_id = ? ORDER BY uploaded_at DESC;", (target_id,))
-    rows = cursor.fetchall()
+    rows = list(db.lab_reports.find({"patient_id": target_id}, {"_id": 0}).sort("uploaded_at", -1))
 
     reports = []
     for r in rows:
-        cursor.execute("SELECT * FROM lab_metrics WHERE lab_report_id = ?;", (r["id"],))
-        m_rows = cursor.fetchall()
+        m_rows = list(db.lab_metrics.find({"lab_report_id": r["id"]}, {"_id": 0}))
         metrics = [
             LabMetric(
                 name=m["metric_name"],
@@ -58,8 +55,6 @@ async def list_lab_reports(
                 uploaded_at=r["uploaded_at"],
             )
         )
-
-    conn.close()
 
     if len(reports) == 0:
         now = datetime.now(timezone.utc).isoformat()
@@ -91,7 +86,7 @@ async def upload_lab_report(
 ):
     """Uploads a lab report:
     1. Stores raw document, OCR text & raw extraction dict in MongoDB (raw_lab_documents).
-    2. Inserts normalized metrics into SQLite (lab_reports & lab_metrics) for time-series trend graphing.
+    2. Inserts normalized metrics into MongoDB (lab_reports & lab_metrics) for time-series trend graphing.
     """
     target_patient_id = patient_id if user.role == "doctor" else user.user_id
 
@@ -123,7 +118,7 @@ async def upload_lab_report(
         action="UPLOAD_LAB_REPORT_HYBRID_PIPELINE",
         target_patient_id=target_patient_id,
         resource=f"/api/documents/lab-reports/{report_dict['id']}",
-        details=f"Uploaded raw document to MongoDB & normalized metrics into SQLite: '{title}' ({file.filename})",
+        details=f"Uploaded raw document & normalized metrics to MongoDB: '{title}' ({file.filename})",
     )
 
     return LabReportRecord(

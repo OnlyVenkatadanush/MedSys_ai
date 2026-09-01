@@ -550,8 +550,14 @@ async def generate_general_tip() -> str:
         tip = await complete_gemini(
             f"Topic: {theme}",
             system=GENERAL_TIP_SYSTEM_PROMPT,
-            max_tokens=80,
-            timeout=1.5,
+            # Gemini 2.5's internal "thinking" tokens count against
+            # maxOutputTokens before any visible text is produced, and how
+            # much thinking a given topic needs varies — measured some
+            # topics needing 300+ just to leave room for the actual answer.
+            # Too low silently returns an empty string, always falling back
+            # to a canned tip.
+            max_tokens=400,
+            timeout=10.0,
         )
     except Exception:
         pass
@@ -567,6 +573,49 @@ async def generate_general_tip() -> str:
 
     _CACHED_TIP = (tip, now)
     return tip
+
+
+CHAT_TITLE_SYSTEM_PROMPT = (
+    "You title chat conversations for a patient health app. Read the "
+    "patient's message (and the assistant's reply, if given) and write a "
+    "short heading summarizing what the conversation is about — 3 to 6 "
+    "words, Title Case, no quotes, no trailing punctuation, no markdown. "
+    "Name the actual health topic (e.g. 'Persistent Cough And Fatigue', "
+    "'Lisinopril Dosage Question') rather than a generic label like "
+    "'Health Question' or 'Chat'."
+)
+
+
+async def generate_chat_title(user_message: str, assistant_reply: str | None = None) -> str:
+    """A short, meaningful heading for a chat session's sidebar entry —
+    generated once from the first exchange, instead of just truncating the
+    raw first message."""
+    fallback = user_message.strip()[:60] or "New chat"
+    prompt = f"Patient: {user_message.strip()[:500]}"
+    if assistant_reply:
+        prompt += f"\n\nAssistant: {assistant_reply.strip()[:500]}"
+
+    try:
+        title = await complete_gemini(
+            prompt,
+            system=CHAT_TITLE_SYSTEM_PROMPT,
+            # Gemini 2.5's internal "thinking" tokens count against
+            # maxOutputTokens before any visible text is produced, and how
+            # much thinking a given message needs varies — a low limit here
+            # reliably returns an empty string with nothing to show for it,
+            # not a short title.
+            max_tokens=300,
+            timeout=10.0,
+            temperature=0,
+        )
+        cleaned = title.strip().strip('"').strip("'").strip()
+        cleaned = re.sub(r"[.!?]+$", "", cleaned)
+        if cleaned and len(cleaned) <= 80:
+            return cleaned
+    except Exception:
+        pass
+
+    return fallback
 
 
 async def generate_reply(

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Stethoscope, User, MessageSquare, FileStack, Pill, Calendar, Command } from "lucide-react";
+import { Search, User, MessageSquare, FileStack, Pill, Calendar, Command } from "lucide-react";
 
 interface CommandItem {
   id: string;
@@ -53,13 +53,6 @@ export const CommandPalette: React.FC = () => {
       category: "Patients",
       icon: User,
       action: () => navigate("/doctor/patient/pat_03"),
-    },
-    {
-      id: "n1",
-      label: "Doctor Command Center",
-      category: "Navigation",
-      icon: Stethoscope,
-      action: () => navigate("/doctor/dashboard"),
     },
     {
       id: "n2",

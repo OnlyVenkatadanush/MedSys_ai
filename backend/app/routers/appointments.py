@@ -4,7 +4,7 @@ Implements two-way Patient-Doctor Appointment Lifecycle:
 1. Patient checks Doctor Availability & Schedule Slots (Available vs Busy).
 2. Patient submits Appointment Request (status = 'requested').
 3. Doctor reviews incoming requests in Doctor Appointments Center and Accepts (confirms), Declines, or Completes.
-4. Persists to relational SQLite medsys.db and MongoDB document store with audit logging.
+4. Persists to MongoDB Atlas (appointments collection) with audit logging.
 """
 
 from datetime import datetime, timezone
@@ -13,8 +13,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.db import get_db
-from app.db_sqlite import get_sqlite_conn
+from app.db import get_doctor_db, get_patient_db
 from app.models_v2 import AppointmentCreateIn, AppointmentRecord
 from app.services.audit_service import log_audit_event
 from app.services.clerk_auth import AuthenticatedUser, get_current_user, require_role
@@ -58,22 +57,21 @@ async def get_doctor_availability(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Returns Doctor's available and booked time slots for a given date so patient can select an available slot."""
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
     # Get doctor name
-    cursor.execute("SELECT name FROM doctors WHERE id = ?;", (doctor_id,))
-    doc_row = cursor.fetchone()
+    doc_row = get_doctor_db().doctors.find_one({"id": doctor_id}, {"_id": 0})
     doc_name = doc_row["name"] if doc_row else "Dr. Sarah Smith, MD"
 
     # Query existing appointments for this doctor on this date
-    cursor.execute("""
-    SELECT id, appointment_date, status FROM appointments
-    WHERE doctor_id = ? AND appointment_date LIKE ? AND status IN ('requested', 'confirmed');
-    """, (doctor_id, f"{date}%"))
-    
-    appts = cursor.fetchall()
-    conn.close()
+    appts = list(db.appointments.find(
+        {
+            "doctor_id": doctor_id,
+            "appointment_date": {"$regex": f"^{date}"},
+            "status": {"$in": ["requested", "confirmed"]},
+        },
+        {"_id": 0, "id": 1, "appointment_date": 1, "status": 1},
+    ))
 
     booked_times = {}
     for a in appts:
@@ -104,61 +102,34 @@ async def request_appointment(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Patient Endpoint: Submits an appointment request to the doctor."""
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
     patient_id = user.user_id if user.role == "patient" else "pat_01"
     doctor_id = payload.doctor_id or "doc_01"
 
     # Fetch Patient Name
-    cursor.execute("SELECT name FROM patients WHERE id = ?;", (patient_id,))
-    p_row = cursor.fetchone()
+    p_row = db.patients.find_one({"id": patient_id}, {"_id": 0})
     patient_name = p_row["name"] if p_row else user.full_name
 
     # Fetch Doctor Name
-    cursor.execute("SELECT name FROM doctors WHERE id = ?;", (doctor_id,))
-    d_row = cursor.fetchone()
+    d_row = get_doctor_db().doctors.find_one({"id": doctor_id}, {"_id": 0})
     doctor_name = d_row["name"] if d_row else "Dr. Sarah Smith, MD"
 
     appt_id = f"apt_{uuid.uuid4().hex[:10]}"
     now = datetime.now(timezone.utc).isoformat()
 
-    cursor.execute("""
-    INSERT INTO appointments (
-        id, patient_id, doctor_id, patient_name, doctor_name, appointment_date, reason, status, notes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?);
-    """, (
-        appt_id,
-        patient_id,
-        doctor_id,
-        patient_name,
-        doctor_name,
-        payload.appointment_date,
-        payload.reason,
-        payload.notes or "",
-        now,
-    ))
-
-    conn.commit()
-    conn.close()
-
-    # Sync to MongoDB for AI store
-    try:
-        db = get_db()
-        db.appointments.insert_one({
-            "id": appt_id,
-            "patient_id": patient_id,
-            "doctor_id": doctor_id,
-            "patient_name": patient_name,
-            "doctor_name": doctor_name,
-            "appointment_date": payload.appointment_date,
-            "reason": payload.reason,
-            "status": "requested",
-            "notes": payload.notes or "",
-            "created_at": now,
-        })
-    except Exception as e:
-        print(f"[Mongo Sync Warning] {e}")
+    db.appointments.insert_one({
+        "id": appt_id,
+        "patient_id": patient_id,
+        "doctor_id": doctor_id,
+        "patient_name": patient_name,
+        "doctor_name": doctor_name,
+        "appointment_date": payload.appointment_date,
+        "reason": payload.reason,
+        "status": "requested",
+        "notes": payload.notes or "",
+        "created_at": now,
+    })
 
     log_audit_event(
         actor_id=user.user_id,
@@ -189,20 +160,13 @@ async def list_doctor_appointments(
     user: AuthenticatedUser = Depends(require_role("doctor")),
 ):
     """Doctor Endpoint: Lists incoming appointment requests & scheduled appointments for approval."""
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
+    query = {"doctor_id": user.user_id}
     if status_filter:
-        cursor.execute("""
-        SELECT * FROM appointments WHERE doctor_id = ? AND status = ? ORDER BY created_at DESC;
-        """, (user.user_id, status_filter))
-    else:
-        cursor.execute("""
-        SELECT * FROM appointments WHERE doctor_id = ? ORDER BY created_at DESC;
-        """, (user.user_id,))
+        query["status"] = status_filter
 
-    rows = cursor.fetchall()
-    conn.close()
+    rows = list(db.appointments.find(query, {"_id": 0}).sort("created_at", -1))
 
     if not rows:
         # Seed default sample appointments if none exist
@@ -256,17 +220,11 @@ async def list_patient_appointments(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Patient Endpoint: Lists all appointment requests & confirmed bookings for current patient."""
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
     patient_id = user.user_id if user.role == "patient" else "pat_01"
 
-    cursor.execute("""
-    SELECT * FROM appointments WHERE patient_id = ? ORDER BY created_at DESC;
-    """, (patient_id,))
-
-    rows = cursor.fetchall()
-    conn.close()
+    rows = list(db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1))
 
     if not rows:
         now = datetime.now(timezone.utc).isoformat()
@@ -309,13 +267,10 @@ async def process_appointment_action(
     user: AuthenticatedUser = Depends(require_role("doctor")),
 ):
     """Doctor Endpoint: Doctor accepts (confirms), declines, or completes an appointment request."""
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
+    db = get_patient_db()
 
-    cursor.execute("SELECT * FROM appointments WHERE id = ?;", (appointment_id,))
-    row = cursor.fetchone()
+    row = db.appointments.find_one({"id": appointment_id}, {"_id": 0})
     if not row:
-        conn.close()
         raise HTTPException(status_code=404, detail="Appointment record not found.")
 
     new_status = row["status"]
@@ -326,21 +281,10 @@ async def process_appointment_action(
     elif payload.action == "complete":
         new_status = "completed"
 
-    cursor.execute("""
-    UPDATE appointments SET status = ?, notes = ? WHERE id = ?;
-    """, (new_status, payload.notes or row["notes"] or "", appointment_id))
+    new_notes = payload.notes or row.get("notes") or ""
 
-    conn.commit()
-    cursor.execute("SELECT * FROM appointments WHERE id = ?;", (appointment_id,))
-    updated_row = cursor.fetchone()
-    conn.close()
-
-    # Also update Mongo
-    try:
-        db = get_db()
-        db.appointments.update_one({"id": appointment_id}, {"$set": {"status": new_status, "notes": payload.notes or ""}})
-    except Exception as e:
-        print(f"[Mongo Update Warning] {e}")
+    db.appointments.update_one({"id": appointment_id}, {"$set": {"status": new_status, "notes": new_notes}})
+    updated_row = db.appointments.find_one({"id": appointment_id}, {"_id": 0})
 
     log_audit_event(
         actor_id=user.user_id,

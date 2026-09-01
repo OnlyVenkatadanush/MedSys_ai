@@ -14,7 +14,7 @@ export interface DoctorPatientAssignment {
   doctor_id: string;
   patient_id: string;
   patient_name: string;
-  patient_age: number;
+  patient_age?: number;
   patient_gender?: string;
   assigned_at: string;
   status: "active" | "archived";
@@ -141,8 +141,8 @@ export interface LabMetricTrend {
 export interface PreConsultationBrief {
   patient_id: string;
   patient_name: string;
-  age: number;
-  last_visit_date: string;
+  age: number | null;
+  last_visit_date: string | null;
   main_concerns: string[];
   trend_summary: string;
   suggested_discussion_topics: string[];
@@ -199,6 +199,7 @@ export interface AuditLogRecord {
 
 export interface CommandCenterData {
   total_patients: number;
+  total_consultations: number;
   todays_appointments_count: number;
   pending_labs_count: number;
   active_alerts_count: number;
@@ -208,7 +209,7 @@ export interface CommandCenterData {
 
 export interface WhatsNewChanges {
   patient_id: string;
-  last_visit_date: string;
+  last_visit_date: string | null;
   current_date: string;
   metrics_changes: Array<{
     metric: string;

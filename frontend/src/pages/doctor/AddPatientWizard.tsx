@@ -1,14 +1,13 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { API_BASE_URL } from "@/services/client";
-import { UserPlus, ArrowRight, ArrowLeft, CheckCircle2, Copy, Sparkles, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { API_BASE_URL, authHeaders } from "@/services/client";
+import { UserPlus, ArrowRight, ArrowLeft, Sparkles, AlertCircle, Plus, Trash2 } from "lucide-react";
 
 export const AddPatientWizard: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form State
@@ -34,9 +33,6 @@ export const AddPatientWizard: React.FC = () => {
   const [reason, setReason] = useState("Routine initial onboarding & blood pressure check");
   const [symptoms, setSymptoms] = useState("Occasional mild headache");
   const [notes, setNotes] = useState("Patient requested comprehensive medical profile setup");
-
-  // Output Result
-  const [createdResult, setCreatedResult] = useState<any | null>(null);
 
   const handleAddAllergy = () => {
     setAllergies([...allergies, { allergen: "", severity: "moderate" }]);
@@ -93,8 +89,7 @@ export const AddPatientWizard: React.FC = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-User-Role": "doctor",
-          "Authorization": "Bearer demo",
+          ...(await authHeaders()),
         },
         body: JSON.stringify(payload),
       });
@@ -105,20 +100,11 @@ export const AddPatientWizard: React.FC = () => {
       }
 
       const data = await res.json();
-      setCreatedResult(data);
-      setStep(4);
+      navigate(`/doctor/patient/${data.patient_id}`);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to create patient record");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const copyInvitation = () => {
-    if (createdResult?.activation_url) {
-      navigator.clipboard.writeText(createdResult.activation_url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -127,7 +113,7 @@ export const AddPatientWizard: React.FC = () => {
       <PageHeader
         eyebrow="Doctor Clinical Workflow"
         title="Register New Patient"
-        meta="4-step registration wizard to create patient clinical record and generate private account activation invitation."
+        meta="3-step registration wizard to create an active patient clinical record."
       />
 
       <div className="px-5 sm:px-8 max-w-4xl mx-auto space-y-8">
@@ -137,7 +123,6 @@ export const AddPatientWizard: React.FC = () => {
             { num: 1, title: "1. Identity & Physicals" },
             { num: 2, title: "2. Medical History" },
             { num: 3, title: "3. Clinical Intake" },
-            { num: 4, title: "4. Account Invitation" },
           ].map((s) => (
             <div
               key={s.num}
@@ -484,70 +469,8 @@ export const AddPatientWizard: React.FC = () => {
                 onClick={handleSubmitWizard}
                 className="rounded-xl bg-teal-deep px-6 py-2.5 font-mono text-xs text-bg-mist hover:opacity-90 transition-opacity flex items-center gap-2"
               >
-                <span>{loading ? "Creating Patient Record..." : "Create Record & Generate Invitation"}</span>
+                <span>{loading ? "Creating Patient Record..." : "Create Patient Record"}</span>
                 <Sparkles className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4: INVITATION GENERATION & ACTIVATION LINK */}
-        {step === 4 && createdResult && (
-          <div className="rounded-2xl border-2 border-teal-deep/30 bg-surface-card p-6 space-y-6 shadow-sm">
-            <div className="flex items-center gap-3 border-b border-hairline pb-4">
-              <CheckCircle2 className="h-6 w-6 text-teal-deep" />
-              <div>
-                <h2 className="font-display text-xl tracking-tight text-ink font-semibold">
-                  Patient Record Created Successfully!
-                </h2>
-                <p className="font-mono text-xs text-stone">
-                  Patient ID: <span className="font-bold text-ink">{createdResult.patient_id_code}</span> • Status: <span className="text-amber-800 font-bold">PENDING_ACTIVATION</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4 font-mono text-xs">
-              <div className="p-4 rounded-xl bg-bg-mist space-y-2 border border-hairline">
-                <p className="text-stone">Patient Account Email:</p>
-                <p className="font-bold text-ink text-sm">{createdResult.email}</p>
-                <p className="text-[11px] text-stone">
-                  An email invitation has been dispatched. The patient must open the activation link to set their own private password.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-teal-deep/5 border border-teal-deep/20 space-y-2">
-                <p className="font-bold text-teal-deep">Private Activation Link:</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={createdResult.activation_url}
-                    className="flex-1 rounded-lg border border-hairline bg-surface-card p-2 text-[11px] text-ink font-mono"
-                  />
-                  <button
-                    onClick={copyInvitation}
-                    className="rounded-lg bg-ink px-3 py-2 text-bg-mist hover:opacity-90 flex items-center gap-1 shrink-0"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>{copied ? "Copied!" : "Copy Link"}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between pt-4 border-t border-hairline">
-              <button
-                onClick={() => navigate("/doctor/patients")}
-                className="rounded-xl border border-hairline bg-surface-card px-5 py-2.5 font-mono text-xs text-ink hover:bg-bg-mist"
-              >
-                View Patient Panel
-              </button>
-              <button
-                onClick={() => navigate(`/doctor/patient/${createdResult.patient_id}`)}
-                className="rounded-xl bg-ink px-6 py-2.5 font-mono text-xs text-bg-mist hover:opacity-90 flex items-center gap-2"
-              >
-                <span>Open Patient Workspace</span>
-                <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </div>

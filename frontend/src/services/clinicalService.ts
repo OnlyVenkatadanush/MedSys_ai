@@ -57,13 +57,21 @@ export async function searchPatients(query: string): Promise<DoctorPatientAssign
   return apiFetch<DoctorPatientAssignment[]>(`/api/doctor/patients/search?q=${encodeURIComponent(query)}`);
 }
 
+export async function linkExistingPatient(identifier: string): Promise<DoctorPatientAssignment> {
+  return apiFetch<DoctorPatientAssignment>("/api/doctor/patients/link", {
+    method: "POST",
+    body: JSON.stringify({ identifier }),
+  });
+}
+
 export async function fetchPatientOverview(patientId: string) {
   return apiFetch<{
     patient_id: string;
     profile: any;
-    latest_diagnosis: string;
-    adherence_rate: string;
-    latest_vitals: Vitals;
+    latest_diagnosis: string | null;
+    adherence_rate: string | null;
+    latest_vitals: Vitals | null;
+    next_appointment_date: string | null;
   }>(`/api/doctor/patient/${patientId}/overview`);
 }
 

@@ -106,9 +106,10 @@ function renderIcon(iconName: string, className: string) {
 interface ModelIndicatorProps {
   status: ModelStatus | null;
   onSwitchingChange?: (isSwitching: boolean) => void;
+  onModelChange?: (model: ModelOption) => void;
 }
 
-export function ModelIndicator({ status, onSwitchingChange }: ModelIndicatorProps) {
+export function ModelIndicator({ status, onSwitchingChange, onModelChange }: ModelIndicatorProps) {
   const [activeModelId, setActiveModelId] = useState<string>(() => {
     return (
       localStorage.getItem("medsys_active_model") ||
@@ -161,6 +162,13 @@ export function ModelIndicator({ status, onSwitchingChange }: ModelIndicatorProp
       setActiveModelId(status.model);
     }
   }, [status]);
+
+  // Notify the parent (Chat.tsx) of the currently active specialty so it
+  // can be sent with each chat request — fires on mount and every switch.
+  useEffect(() => {
+    const option = MEDGEMMA_MODELS.find((m) => m.id === activeModelId) || MEDGEMMA_MODELS[0];
+    onModelChange?.(option);
+  }, [activeModelId, onModelChange]);
 
   // Click outside listener for dropdown
   useEffect(() => {

@@ -1,4 +1,5 @@
 import type { ProfileRecord } from "@/types";
+import type { DoctorProfileData } from "@/components/profile/DoctorProfileView";
 import { ApiError, apiFetch, isMockMode, mockDelay } from "./client";
 import { mockProfile } from "./mocks";
 
@@ -35,6 +36,32 @@ export async function saveProfile(input: ProfileInput): Promise<ProfileRecord> {
     return mockDelay(record);
   }
   return apiFetch<ProfileRecord>("/profile", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+const DOCTOR_PROFILE_FALLBACK_KEY = "medsys_doctor_profile";
+
+export async function getDoctorProfile(fallback: DoctorProfileData): Promise<DoctorProfileData> {
+  if (isMockMode) {
+    try {
+      const saved = localStorage.getItem(DOCTOR_PROFILE_FALLBACK_KEY);
+      if (saved) return mockDelay(JSON.parse(saved));
+    } catch {}
+    return mockDelay(fallback);
+  }
+  return apiFetch<DoctorProfileData>("/profile/doctor");
+}
+
+export async function saveDoctorProfile(input: DoctorProfileData): Promise<DoctorProfileData> {
+  if (isMockMode) {
+    try {
+      localStorage.setItem(DOCTOR_PROFILE_FALLBACK_KEY, JSON.stringify(input));
+    } catch {}
+    return mockDelay(input);
+  }
+  return apiFetch<DoctorProfileData>("/profile/doctor", {
     method: "PUT",
     body: JSON.stringify(input),
   });

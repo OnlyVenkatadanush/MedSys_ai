@@ -44,59 +44,63 @@ export const DoctorAnalyticsPage: React.FC = () => {
     }
   };
 
-  // Process Risk Donut Data
+  // Loading-only placeholders — once `data` has actually loaded, an empty
+  // array from the backend (a doctor with genuinely zero of something) must
+  // render as empty, not silently swap back in these demo numbers.
   const riskDistribution = useMemo(() => {
-    return (
-      data?.patient_risk_distribution || [
-        { label: "Stable Condition", count: 7, percentage: 58.3, color: "#0d9488" },
-        { label: "Requires Attention", count: 3, percentage: 25.0, color: "#f59e0b" },
-        { label: "Critical / High Risk", count: 2, percentage: 16.7, color: "#ef4444" },
-      ]
-    );
+    if (data) return data.patient_risk_distribution || [];
+    return [
+      { label: "Stable Condition", count: 7, percentage: 58.3, color: "#0d9488" },
+      { label: "Requires Attention", count: 3, percentage: 25.0, color: "#f59e0b" },
+      { label: "Critical / High Risk", count: 2, percentage: 16.7, color: "#ef4444" },
+    ];
   }, [data]);
 
-  // Process Chronic Conditions Data
   const chronicConditions = useMemo(() => {
-    return (
-      data?.top_chronic_conditions || [
-        { condition: "Hypertension (Stage 1/2)", count: 8, percentage: 66.7 },
-        { condition: "Type 2 Diabetes Mellitus", count: 5, percentage: 41.7 },
-        { condition: "Bronchial Asthma", count: 3, percentage: 25.0 },
-        { condition: "Hyperlipidemia / Dyslipidemia", count: 4, percentage: 33.3 },
-        { condition: "Chronic Kidney Disease", count: 2, percentage: 16.7 },
-      ]
-    );
+    if (data) return data.top_chronic_conditions || [];
+    return [
+      { condition: "Hypertension (Stage 1/2)", count: 8, percentage: 66.7 },
+      { condition: "Type 2 Diabetes Mellitus", count: 5, percentage: 41.7 },
+      { condition: "Bronchial Asthma", count: 3, percentage: 25.0 },
+      { condition: "Hyperlipidemia / Dyslipidemia", count: 4, percentage: 33.3 },
+      { condition: "Chronic Kidney Disease", count: 2, percentage: 16.7 },
+    ];
   }, [data]);
 
-  // Process Adherence Data
   const adherenceBreakdown = useMemo(() => {
-    return (
-      data?.adherence_breakdown || [
-        { category: "High Adherence (>85%)", count: 7, percentage: 58.3, color: "#10b981" },
-        { category: "Moderate Adherence (70-85%)", count: 3, percentage: 25.0, color: "#3b82f6" },
-        { category: "Low Adherence (<70%)", count: 2, percentage: 16.7, color: "#f59e0b" },
-      ]
-    );
+    if (data) return data.adherence_breakdown || [];
+    return [
+      { category: "High Adherence (>85%)", count: 7, percentage: 58.3, color: "#10b981" },
+      { category: "Moderate Adherence (70-85%)", count: 3, percentage: 25.0, color: "#3b82f6" },
+      { category: "Low Adherence (<70%)", count: 2, percentage: 16.7, color: "#f59e0b" },
+    ];
   }, [data]);
 
-  // Process Weekly Velocity
   const velocityData = useMemo(() => {
-    return (
-      data?.weekly_consultation_velocity || [
-        { day: "Mon", count: 8 },
-        { day: "Tue", count: 10 },
-        { day: "Wed", count: 9 },
-        { day: "Thu", count: 11 },
-        { day: "Fri", count: 6 },
-        { day: "Sat", count: 4 },
-        { day: "Sun", count: 2 },
-      ]
-    );
+    if (data) return data.weekly_consultation_velocity || [];
+    return [
+      { day: "Mon", count: 8 },
+      { day: "Tue", count: 10 },
+      { day: "Wed", count: 9 },
+      { day: "Thu", count: 11 },
+      { day: "Fri", count: 6 },
+      { day: "Sat", count: 4 },
+      { day: "Sun", count: 2 },
+    ];
   }, [data]);
 
   const maxVelocity = useMemo(() => {
     const max = Math.max(...velocityData.map((d) => d.count), 1);
     return Math.ceil(max * 1.2);
+  }, [velocityData]);
+
+  const peakDay = useMemo(() => {
+    return velocityData.reduce((peak, d) => (d.count > peak.count ? d : peak), velocityData[0] || { day: "—", count: 0 });
+  }, [velocityData]);
+
+  const avgPerDay = useMemo(() => {
+    if (velocityData.length === 0) return 0;
+    return velocityData.reduce((sum, d) => sum + d.count, 0) / velocityData.length;
   }, [velocityData]);
 
   // Calculate Donut Segments (Circumference C = 2 * PI * 65 = 408.4)
@@ -169,11 +173,11 @@ export const DoctorAnalyticsPage: React.FC = () => {
               </div>
             </div>
             <p className="font-display text-3xl font-bold tracking-tight text-ink">
-              {data?.total_assigned_patients || 12}
+              {data ? data.total_assigned_patients : "—"}
             </p>
             <div className="mt-2 flex items-center justify-between">
               <span className="font-mono text-[11px] text-teal-deep font-semibold">Active Panel</span>
-              <span className="text-[11px] text-stone">Synced via SQLite</span>
+              <span className="text-[11px] text-stone">Synced via MongoDB</span>
             </div>
           </motion.div>
 
@@ -189,10 +193,10 @@ export const DoctorAnalyticsPage: React.FC = () => {
               </div>
             </div>
             <p className="font-display text-3xl font-bold tracking-tight text-ink">
-              {data?.consultations_this_week || 18}
+              {data ? data.consultations_this_week : "—"}
             </p>
             <div className="mt-2 flex items-center justify-between">
-              <span className="font-mono text-[11px] text-sky-600 font-semibold">+14.2% vs last period</span>
+              <span className="font-mono text-[11px] text-sky-600 font-semibold">This Week</span>
               <span className="text-[11px] text-stone">Completed</span>
             </div>
           </motion.div>
@@ -209,7 +213,7 @@ export const DoctorAnalyticsPage: React.FC = () => {
               </div>
             </div>
             <p className="font-display text-3xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-              {data?.pending_lab_reviews || 4}
+              {data ? data.pending_lab_reviews : "—"}
             </p>
             <div className="mt-2 flex items-center justify-between">
               <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
@@ -232,7 +236,7 @@ export const DoctorAnalyticsPage: React.FC = () => {
               </div>
             </div>
             <p className="font-display text-3xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-              {data?.overall_adherence_rate || "84.2%"}
+              {data ? data.overall_adherence_rate : "—"}
             </p>
             <div className="mt-2 flex items-center justify-between">
               <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">High Compliance</span>
@@ -288,7 +292,9 @@ export const DoctorAnalyticsPage: React.FC = () => {
                     <span className="font-display text-2xl font-bold text-ink">
                       {hoveredSegment
                         ? riskDistribution.find((r) => r.label === hoveredSegment)?.percentage + "%"
-                        : `${data?.total_assigned_patients || 12}`}
+                        : data
+                        ? `${data.total_assigned_patients}`
+                        : "—"}
                     </span>
                     <span className="font-mono text-[10px] uppercase text-stone tracking-wider">
                       {hoveredSegment ? hoveredSegment.split(" ")[0] : "Total Patients"}
@@ -350,7 +356,7 @@ export const DoctorAnalyticsPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-teal-deep bg-teal-deep/10 px-2.5 py-1 rounded-full border border-teal-deep/20">
                     <Zap className="h-3 w-3" />
-                    Peak: Thursday (11)
+                    Peak: {peakDay.day} ({peakDay.count})
                   </span>
                 </div>
               </div>
@@ -392,8 +398,7 @@ export const DoctorAnalyticsPage: React.FC = () => {
             </div>
 
             <div className="mt-4 pt-3 border-t border-hairline/60 flex items-center justify-between text-[11px] text-stone">
-              <span>Avg: 7.1 consults/day</span>
-              <span className="font-mono text-teal-deep font-semibold">100% On-time Sign-off</span>
+              <span>Avg: {avgPerDay.toFixed(1)} consults/day</span>
             </div>
           </div>
         </div>
@@ -413,7 +418,7 @@ export const DoctorAnalyticsPage: React.FC = () => {
                 </div>
               </div>
               <span className="font-mono text-[10px] text-stone bg-bg-mist px-2.5 py-1 rounded-full border border-hairline">
-                SQLite Filtered
+                Panel Filtered
               </span>
             </div>
 
@@ -484,12 +489,15 @@ export const DoctorAnalyticsPage: React.FC = () => {
                 Age Demographics Ratio
               </span>
               <div className="grid grid-cols-4 gap-2">
-                {(data?.age_demographics || [
-                  { group: "18-34", count: 2 },
-                  { group: "35-50", count: 5 },
-                  { group: "51-65", count: 4 },
-                  { group: "65+", count: 1 },
-                ]).map((demo, idx) => (
+                {(data
+                  ? data.age_demographics || []
+                  : [
+                      { group: "18-34", count: 2 },
+                      { group: "35-50", count: 5 },
+                      { group: "51-65", count: 4 },
+                      { group: "65+", count: 1 },
+                    ]
+                ).map((demo, idx) => (
                   <div key={idx} className="rounded-xl border border-hairline bg-surface-card p-2 text-center">
                     <span className="block font-mono text-[10px] text-stone">{demo.group}</span>
                     <span className="font-mono text-sm font-bold text-ink">{demo.count} pts</span>

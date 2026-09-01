@@ -3,10 +3,11 @@ import { useUser } from "@clerk/clerk-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ProfileForm } from "@/components/profile/ProfileForm";
 import { DoctorProfileView, DEFAULT_DOCTOR_PROFILE } from "@/components/profile/DoctorProfileView";
-import type { DoctorProfileData } from "@/components/profile/DoctorProfileView";
+import type { DoctorProfileData, DoctorProfileStats } from "@/components/profile/DoctorProfileView";
 import { LoadError } from "@/components/LoadError";
-import { getProfile, saveProfile } from "@/services/profile";
+import { getDoctorProfile, getProfile, saveDoctorProfile, saveProfile } from "@/services/profile";
 import { getActiveRoleOverride } from "@/services/client";
+import { fetchCommandCenter } from "@/services/clinicalService";
 import type { ProfileInput } from "@/services/profile";
 import type { ProfileRecord } from "@/types";
 
@@ -39,23 +40,20 @@ export default function Profile() {
   const [copied, setCopied] = useState(false);
   const [showCallModal, setShowCallModal] = useState(false);
 
-  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData>(() => {
-    try {
-      const saved = localStorage.getItem("medsys_doctor_profile");
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return {
-      ...DEFAULT_DOCTOR_PROFILE,
-      fullName: user?.fullName || DEFAULT_DOCTOR_PROFILE.fullName,
-      email: user?.primaryEmailAddress?.emailAddress || DEFAULT_DOCTOR_PROFILE.email,
-    };
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData>({
+    ...DEFAULT_DOCTOR_PROFILE,
+    fullName: user?.fullName || DEFAULT_DOCTOR_PROFILE.fullName,
+    email: user?.primaryEmailAddress?.emailAddress || DEFAULT_DOCTOR_PROFILE.email,
   });
+  const [doctorStats, setDoctorStats] = useState<DoctorProfileStats | null>(null);
 
-  const handleUpdateDoctor = (updated: DoctorProfileData) => {
+  const handleUpdateDoctor = async (updated: DoctorProfileData) => {
     setDoctorProfile(updated);
     try {
-      localStorage.setItem("medsys_doctor_profile", JSON.stringify(updated));
-    } catch {}
+      await saveDoctorProfile(updated);
+    } catch {
+      setError("Couldn't save your profile — try again.");
+    }
   };
 
   useEffect(() => {
@@ -75,6 +73,39 @@ export default function Profile() {
       active = false;
     };
   }, [retryKey, isDoctor]);
+
+  useEffect(() => {
+    if (!isDoctor) return;
+    let active = true;
+    const fallback: DoctorProfileData = {
+      ...DEFAULT_DOCTOR_PROFILE,
+      fullName: user?.fullName || DEFAULT_DOCTOR_PROFILE.fullName,
+      email: user?.primaryEmailAddress?.emailAddress || DEFAULT_DOCTOR_PROFILE.email,
+    };
+    getDoctorProfile(fallback)
+      .then((p) => {
+        if (active) setDoctorProfile(p);
+      })
+      .catch(() => {
+        if (active) setDoctorProfile(fallback);
+      });
+    fetchCommandCenter()
+      .then((cc) => {
+        if (!active) return;
+        setDoctorStats({
+          activePatients: cc.total_patients,
+          totalConsultations: cc.total_consultations,
+          pendingLabReviews: cc.pending_labs_count,
+          activeAlerts: cc.active_alerts_count,
+        });
+      })
+      .catch(() => {
+        if (active) setDoctorStats(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isDoctor]);
 
   async function handleSave(input: ProfileInput) {
     setSaving(true);
@@ -109,12 +140,33 @@ export default function Profile() {
           doctorData={doctorProfile}
           clerkUser={user}
           onUpdateDoctor={handleUpdateDoctor}
+          stats={doctorStats}
         />
       </div>
     );
   }
 
   if (!profile) return null;
+
+  if (editing) {
+    return (
+      <div className="pb-20">
+        <PageHeader
+          eyebrow="Patient Medical Passport"
+          title="Edit Health Profile"
+        />
+        <div className="mx-auto max-w-6xl px-5 sm:px-8">
+          <ProfileForm
+            initial={profile}
+            saving={saving}
+            error={error}
+            onCancel={() => setEditing(false)}
+            onSave={handleSave}
+          />
+        </div>
+      </div>
+    );
+  }
 
   const bmiCat = getBmiCategory(profile.bmi ?? 22.5);
 

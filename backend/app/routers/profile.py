@@ -2,10 +2,10 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.db import get_db
-from app.models import ProfileIn, ProfileRecord
+from app.db import get_doctor_db, get_patient_db
+from app.models import DoctorProfileRecord, ProfileIn, ProfileRecord
 from app.services import model_router, supermemory_client
-from app.services.mock_data import DEFAULT_PROFILE
+from app.services.mock_data import DEFAULT_DOCTOR_PROFILE, DEFAULT_PROFILE
 from app.services.clerk_auth import require_clerk_auth
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -36,7 +36,7 @@ def _dedupe_medications(manual: list[dict], extracted: list[dict]) -> list[dict]
 
 @router.get("", response_model=ProfileRecord)
 async def get_profile(user_id: str = Depends(require_clerk_auth)) -> dict:
-    db = get_db()
+    db = get_patient_db()
     profile = db.profiles.find_one({"clerkUserId": user_id}, {"_id": 0, "clerkUserId": 0})
     if not profile:
         profile = dict(DEFAULT_PROFILE)
@@ -82,8 +82,8 @@ async def get_profile(user_id: str = Depends(require_clerk_auth)) -> dict:
     # don't depend on each other — run them together.
     _, graph_symptoms, graph_medications = await asyncio.gather(
         _backfill_missing(),
-        supermemory_client.list_all_symptoms(),
-        supermemory_client.list_all_medications(),
+        supermemory_client.list_all_symptoms(user_id),
+        supermemory_client.list_all_medications(user_id),
     )
 
     extracted_conditions: list[str] = []
@@ -104,11 +104,34 @@ async def get_profile(user_id: str = Depends(require_clerk_auth)) -> dict:
 
 @router.put("", response_model=ProfileRecord)
 def save_profile(body: ProfileIn, user_id: str = Depends(require_clerk_auth)) -> dict:
-    db = get_db()
+    db = get_patient_db()
     height_m = body.heightCm / 100
     bmi = round(body.weightKg / (height_m * height_m), 1) if height_m > 0 else 0.0
     record = {**body.model_dump(), "bmi": bmi}
     db.profiles.update_one(
+        {"clerkUserId": user_id}, {"$set": {**record, "clerkUserId": user_id}}, upsert=True
+    )
+    return record
+
+
+# Doctor-authored profile (bio, specializations, board certifications). Kept
+# in a separate collection from the patient `profiles` above since the two
+# shapes don't overlap — both key on the same `clerkUserId` from Clerk auth,
+# so each doctor's edits are isolated to their own account (previously this
+# lived only in the browser's localStorage, so it wasn't scoped per-account
+# at all).
+@router.get("/doctor", response_model=DoctorProfileRecord)
+async def get_doctor_profile(user_id: str = Depends(require_clerk_auth)) -> dict:
+    db = get_doctor_db()
+    profile = db.doctor_profiles.find_one({"clerkUserId": user_id}, {"_id": 0, "clerkUserId": 0})
+    return profile or dict(DEFAULT_DOCTOR_PROFILE)
+
+
+@router.put("/doctor", response_model=DoctorProfileRecord)
+def save_doctor_profile(body: DoctorProfileRecord, user_id: str = Depends(require_clerk_auth)) -> dict:
+    db = get_doctor_db()
+    record = body.model_dump()
+    db.doctor_profiles.update_one(
         {"clerkUserId": user_id}, {"$set": {**record, "clerkUserId": user_id}}, upsert=True
     )
     return record

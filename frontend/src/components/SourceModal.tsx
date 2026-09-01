@@ -14,18 +14,26 @@ interface SourceModalProps {
 
 export function SourceModal({ source, onClose }: SourceModalProps) {
   const [detail, setDetail] = useState<ChatSourceDetail | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const reduced = useReducedMotion();
 
   useEffect(() => {
     if (!source) {
       setDetail(null);
+      setLoadError(false);
       return;
     }
     let active = true;
     setDetail(null);
-    getSourceContent(source).then((d) => {
-      if (active) setDetail(d);
-    });
+    setLoadError(false);
+    getSourceContent(source)
+      .then((d) => {
+        if (active) setDetail(d);
+      })
+      .catch((err) => {
+        console.error("Failed to load source content", err);
+        if (active) setLoadError(true);
+      });
     return () => {
       active = false;
     };
@@ -101,7 +109,9 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {!detail ? (
+            {loadError ? (
+              <p className="text-[13px] text-clay-alert">Couldn't load this document — try again.</p>
+            ) : !detail ? (
               <p className="text-[13px] text-stone">Loading…</p>
             ) : (
               <div className="text-[14px] leading-relaxed text-ink/90">

@@ -91,6 +91,9 @@ class ChatMessageIn(BaseModel):
     content: str
     deepSearch: bool = False
     images: list[str] | None = None
+    # Selected MedGemma specialty from the model picker (e.g. "Radiology",
+    # "Dermatology") — None/"General Medicine" means no domain restriction.
+    specialty: str | None = None
 
 
 class ModelStatus(BaseModel):
@@ -144,3 +147,18 @@ class ProfileIn(BaseModel):
     conditions: list[str] = []
     medications: list[Medication] = []
     emergencyContact: EmergencyContact
+
+
+class DoctorProfileRecord(BaseModel):
+    fullName: str
+    title: str
+    specialty: str
+    licenseNumber: str
+    hospital: str
+    experienceYears: int
+    email: str
+    phone: str
+    consultationHours: str
+    bio: str
+    specializations: list[str] = []
+    boardCertifications: list[str] = []

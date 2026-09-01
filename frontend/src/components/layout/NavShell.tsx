@@ -1,23 +1,18 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { UserButton, useUser } from "@clerk/clerk-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { UserButton, useClerk, useUser } from "@clerk/clerk-react";
 import {
-  Stethoscope,
-  Activity,
+  Home as HomeIcon,
   MessageSquare,
   MapPinned,
-  FileStack,
+  FolderOpen,
   UserRound,
-  Pill,
-  Utensils,
-  Calendar,
   Users,
-  Sparkles,
   BarChart3,
-  GitCompare,
+  LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { getActiveRoleOverride } from "@/services/client";
+import { getActiveRoleOverride, setActiveRoleOverride, setDemoAuthenticated } from "@/services/client";
 import { CommandPalette } from "@/components/CommandPalette";
 
 interface NavItem {
@@ -27,30 +22,25 @@ interface NavItem {
 }
 
 const DOCTOR_NAV_ITEMS: NavItem[] = [
-  { to: "/doctor/dashboard", label: "Command Center", icon: Stethoscope },
   { to: "/doctor/patients", label: "My Patients", icon: Users },
-  { to: "/doctor/copilot", label: "Clinical Copilot", icon: Sparkles },
   { to: "/doctor/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/doctor/appointments", label: "Appointments", icon: Calendar },
-  { to: "/find-care", label: "Find Care", icon: MapPinned },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
 const PATIENT_NAV_ITEMS: NavItem[] = [
-  { to: "/patient/dashboard", label: "Overview", icon: Activity },
-  { to: "/patient/medications", label: "Medications", icon: Pill },
-  { to: "/patient/diet", label: "Diet", icon: Utensils },
-  { to: "/patient/chat", label: "AI Chat", icon: MessageSquare },
-  { to: "/patient/lab-reports", label: "Lab Reports", icon: FileStack },
-  { to: "/patient/appointments", label: "Appointments", icon: Calendar },
-  { to: "/find-care", label: "Find Care", icon: MapPinned },
+  { to: "/home", label: "Home", icon: HomeIcon },
+  { to: "/chat", label: "Chat", icon: MessageSquare },
+  { to: "/find-care", label: "FindCare", icon: MapPinned },
+  { to: "/mydata", label: "MyData", icon: FolderOpen },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
 export function NavShell() {
-  const { user } = useUser();
+  const { user, isSignedIn } = useUser();
+  const { signOut } = useClerk();
+  const navigate = useNavigate();
   const activeRoleOverride = getActiveRoleOverride();
-  
+
   // Determine user role from Clerk metadata or active role context
   const userRole: "doctor" | "patient" =
     (user?.publicMetadata?.role as "doctor" | "patient") ||
@@ -60,6 +50,25 @@ export function NavShell() {
 
   const isDoctor = userRole === "doctor";
   const navItems = isDoctor ? DOCTOR_NAV_ITEMS : PATIENT_NAV_ITEMS;
+
+  // Demo-mode sessions (the "Demo Credentials" login) never create a real
+  // Clerk session, so there's nothing for Clerk's own sign-out to end —
+  // clear the local role selection too and send everyone back to the
+  // role-selection screen either way.
+  const handleSignOut = async () => {
+    try {
+      if (isSignedIn) {
+        await signOut();
+      }
+    } finally {
+      setActiveRoleOverride(null);
+      setDemoAuthenticated(false);
+      try {
+        localStorage.removeItem("medsys_role");
+      } catch {}
+      navigate("/select-role", { replace: true });
+    }
+  };
 
   return (
     <div className="min-h-dvh bg-bg-mist text-ink font-sans">
@@ -95,7 +104,7 @@ export function NavShell() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to !== "/doctor/dashboard" && item.to !== "/patient/dashboard"}
+                end={item.to !== "/patient/dashboard"}
                 className={({ isActive }) =>
                   [
                     "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors duration-150 font-medium",
@@ -114,7 +123,7 @@ export function NavShell() {
           {/* User Account / Signout */}
           <div className="mt-auto flex w-full items-center justify-between border-t border-hairline px-2 pt-4">
             <div className="flex items-center gap-2">
-              <UserButton afterSignOutUrl="/" />
+              {isSignedIn && <UserButton afterSignOutUrl="/select-role" />}
               <div className="hidden flex-col xl:flex">
                 <span className="font-mono text-[11px] text-stone">
                   {user?.fullName || (isDoctor ? "Dr. Sarah Smith" : "John Doe")}
@@ -124,6 +133,15 @@ export function NavShell() {
                 </span>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign out"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg p-2 text-stone transition-colors hover:bg-surface-card hover:text-clay-alert"
+            >
+              <LogOut className="h-4 w-4" strokeWidth={1.75} />
+              <span className="hidden text-xs font-medium xl:inline">Sign out</span>
+            </button>
           </div>
         </aside>
 
@@ -141,7 +159,15 @@ export function NavShell() {
             </div>
 
             <div className="flex items-center gap-2">
-              <UserButton afterSignOutUrl="/" />
+              {isSignedIn && <UserButton afterSignOutUrl="/select-role" />}
+              <button
+                type="button"
+                onClick={handleSignOut}
+                title="Sign out"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-stone transition-colors hover:bg-bg-mist hover:text-clay-alert"
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.75} />
+              </button>
             </div>
           </header>
 

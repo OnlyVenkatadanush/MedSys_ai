@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 import httpx
 
-from app.db import get_db
+from app.db import get_patient_db
 from app.services import model_router
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -234,7 +234,7 @@ def apply_cached_knowledge(graph: dict) -> dict:
     if not graph or not graph.get("nodes"):
         return graph
 
-    db = get_db()
+    db = get_patient_db()
     nodes = list(graph.get("nodes", []))
     edges = list(graph.get("edges", []))
     node_by_id = {n["id"]: n for n in nodes}
@@ -276,7 +276,7 @@ async def enrich_graph_with_clinical_knowledge(graph: dict) -> dict:
     if not graph or not graph.get("nodes"):
         return graph
 
-    db = get_db()
+    db = get_patient_db()
     nodes = list(graph.get("nodes", []))
     edges = list(graph.get("edges", []))
     node_by_id = {n["id"]: n for n in nodes}
@@ -427,7 +427,7 @@ async def enrich_graph_with_clinical_knowledge(graph: dict) -> dict:
 
 async def compute_and_store_symptom_knowledge(symptom_name: str) -> None:
     """Invoked immediately upon logging a new symptom. Prompts Gemini 2.5 Flash to compute medical definition, category, and pairwise clinical rationales against all existing symptoms, storing everything permanently in MongoDB."""
-    db = get_db()
+    db = get_patient_db()
     symptom_name = symptom_name.strip().capitalize()
     if not symptom_name:
         return
@@ -486,7 +486,7 @@ async def compute_and_store_symptom_knowledge(symptom_name: str) -> None:
 
 async def delete_symptom_knowledge(symptom_name: str) -> None:
     """Removes cached node and edge entries for a deleted symptom."""
-    db = get_db()
+    db = get_patient_db()
     label = symptom_name.strip().lower()
     db.graph_cache.delete_one({"key": f"node:{label}"})
     db.graph_cache.delete_many({"key": {"$regex": f"edge:.*{re.escape(label)}.*"}})

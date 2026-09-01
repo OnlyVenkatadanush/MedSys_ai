@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db import init_collections
 from app.routers import (
     appointments,
     auth,
@@ -19,6 +20,8 @@ from app.routers import (
 from app.services.clerk_auth import require_clerk_auth
 
 app = FastAPI(title="MedSys AI 2.0 Clinical Platform API")
+
+init_collections()
 
 app.add_middleware(
     CORSMiddleware,

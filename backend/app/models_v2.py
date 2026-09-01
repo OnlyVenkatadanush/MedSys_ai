@@ -57,11 +57,25 @@ class DoctorRegistrationIn(BaseModel):
     full_name: str = Field(..., min_length=2, example="Dr. Sarah Smith")
     email: str = Field(..., example="dr.smith@medsys.ai")
     phone: str = Field(..., example="+1-555-0100")
-    password: str = Field(..., min_length=6)
     specialization: str = Field("General Practice", example="Cardiology & Internal Medicine")
     license_number: str = Field(..., example="MD-994821")
     hospital_name: Optional[str] = Field("St. Jude Medical Center")
     experience_years: Optional[int] = Field(10)
+
+
+class PatientSelfRegistrationIn(BaseModel):
+    """Self-serve patient registration — filled in on first login, unlike
+    the doctor-driven add_patient_wizard which invites a patient by email."""
+    full_name: str = Field(..., min_length=2, example="John Doe")
+    email: str = Field(..., example="john.doe@example.com")
+    dob: str = Field(..., example="1990-01-15")
+    gender: str = Field("Male", example="Male")
+    blood_group: str = Field("O+", example="O+")
+    height_cm: Optional[float] = Field(170.0)
+    weight_kg: Optional[float] = Field(70.0)
+    phone: Optional[str] = ""
+    emergency_contact_name: Optional[str] = ""
+    emergency_contact_phone: Optional[str] = ""
 
 
 class PatientWizardStep1Identity(BaseModel):
@@ -101,15 +115,11 @@ class PatientWizardOut(BaseModel):
     name: str
     email: str
     account_state: str
-    invitation_token: str
-    activation_url: str
     message: str
 
 
 class PatientActivationIn(BaseModel):
     invitation_token: str
-    password: str = Field(..., min_length=6)
-    confirm_password: str = Field(..., min_length=6)
 
 
 # ==================== APPOINTMENT SCHEMAS ====================
@@ -218,15 +228,15 @@ class DoctorPatientAssignment(BaseModel):
     doctor_id: str
     patient_id: str
     patient_name: str
-    patient_age: int
-    patient_gender: str
+    patient_age: Optional[int] = None
+    patient_gender: Optional[str] = None
     assigned_at: str
     status: str
 
 
 class WhatsNewChanges(BaseModel):
     patient_id: str
-    last_visit_date: str
+    last_visit_date: Optional[str] = None
     current_date: str
     metrics_changes: List[Dict[str, Any]]
     events_since_last_visit: List[str]
@@ -239,6 +249,12 @@ class EvidenceTrace(BaseModel):
     title: str
     evidence_sources: List[str]
     relevant_changes: List[str]
+
+
+class LinkExistingPatientIn(BaseModel):
+    """Identifies an already-registered patient to add to a doctor's panel —
+    either their account email or their PAT-XXXXXX Patient ID code."""
+    identifier: str = Field(..., min_length=3, example="john.doe@example.com")
 
 
 class VoiceParseIn(BaseModel):
@@ -319,8 +335,8 @@ class LabMetricTrend(BaseModel):
 class PreConsultationBrief(BaseModel):
     patient_id: str
     patient_name: str
-    age: int
-    last_visit_date: str
+    age: Optional[int] = None
+    last_visit_date: Optional[str] = None
     main_concerns: List[str]
     trend_summary: str
     suggested_discussion_topics: List[str]
@@ -328,6 +344,7 @@ class PreConsultationBrief(BaseModel):
 
 class CommandCenterData(BaseModel):
     total_patients: int
+    total_consultations: int
     todays_appointments_count: int
     pending_labs_count: int
     active_alerts_count: int
@@ -388,4 +405,4 @@ class ConsultationSession(BaseModel):
 
 class CopilotChatIn(BaseModel):
     message: str
-    patient_id: Optional[str] = "pat_01"
+    patient_id: Optional[str] = None

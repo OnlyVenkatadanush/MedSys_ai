@@ -5,7 +5,7 @@ Formats dynamic content-aware patient medical memory for prompt injection.
 """
 
 from datetime import datetime, timezone
-from app.db import get_db
+from app.db import get_patient_db
 
 
 def _today_iso() -> str:
@@ -19,7 +19,7 @@ def update_symptom_state(
     notes: str = "",
 ) -> None:
     """Upserts a symptom state record in db.patient_symptom_history for a user."""
-    db = get_db()
+    db = get_patient_db()
     clean_name = symptom_name.strip().title()
     if not clean_name:
         return
@@ -64,7 +64,7 @@ def resolve_symptom(user_id: str, symptom_name: str, notes: str = "") -> None:
 
 def get_patient_symptom_summary(user_id: str) -> dict:
     """Returns grouped lists of active, resolved, and historical symptoms."""
-    db = get_db()
+    db = get_patient_db()
     docs = list(db.patient_symptom_history.find({"clerkUserId": user_id}, {"_id": 0}))
 
     active = []

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import uuid
 from typing import Optional
-from app.db import get_db
+from app.db import get_patient_db
 from app.models_v2 import AuditLogRecord
 
 
@@ -25,7 +25,7 @@ def log_audit_event(
         details=details,
     )
     try:
-        db = get_db()
+        db = get_patient_db()
         db.audit_logs.insert_one(audit_entry.model_dump())
     except Exception as e:
         print(f"[AuditLog Error] Failed to write audit log: {e}")

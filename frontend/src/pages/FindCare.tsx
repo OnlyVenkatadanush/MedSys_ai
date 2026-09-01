@@ -65,24 +65,41 @@ export default function FindCare() {
     return list;
   }, [withDistance, specialty, facilityType, radius]);
 
-  function handleCaptureLocation() {
+  function requestLocation(silent: boolean) {
     if (!navigator.geolocation) {
-      setLocationError("Geolocation isn't available in this browser.");
+      if (!silent) setLocationError("Geolocation isn't available in this browser.");
       return;
     }
     setLocating(true);
-    setLocationError(null);
+    if (!silent) setLocationError(null);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
         setLocating(false);
       },
       () => {
-        setLocationError("Couldn't get your location — check browser permissions.");
         setLocating(false);
+        // The automatic on-load attempt fails silently — the browser may
+        // not have a permission decision yet, or the user previously
+        // denied it, and neither is worth an error banner for something
+        // they didn't explicitly ask for. The manual button below still
+        // surfaces a real error on failure.
+        if (!silent) setLocationError("Couldn't get your location — check browser permissions.");
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
+  }
+
+  // Ask for location as soon as the page loads instead of waiting for the
+  // user to notice and click "Use my location" — this is what people
+  // actually expect from a "find nearby care" page.
+  useEffect(() => {
+    requestLocation(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleCaptureLocation() {
+    requestLocation(false);
   }
 
   function handleClearLocation() {

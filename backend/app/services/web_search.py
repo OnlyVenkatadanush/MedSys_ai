@@ -50,10 +50,11 @@ async def _scrape(client: httpx.AsyncClient, url: str) -> str | None:
         return None
 
 
-async def deep_search(query: str) -> list[dict]:
+async def deep_search(query: str, owner_id: str) -> list[dict]:
     """Searches the web, scrapes (or falls back to search snippets without a
-    Firecrawl key), and stores every result for retrieval. Returns a compact
-    {title, url} list for surfacing in the sources panel."""
+    Firecrawl key), and stores every result for retrieval, in the
+    requesting user's own namespace. Returns a compact {title, url} list for
+    surfacing in the sources panel."""
     results = await asyncio.to_thread(_ddg_search, query, MAX_RESULTS)
     if not results:
         return []
@@ -71,8 +72,8 @@ async def deep_search(query: str) -> list[dict]:
             if not content.strip():
                 continue
 
-            rag.store_web_content(url, title, content)
-            await supermemory_client.log_web_content(query, url, title, content)
+            rag.store_web_content(url, title, content, owner_id)
+            await supermemory_client.log_web_content(query, url, title, content, owner_id)
             stored.append({"title": title, "url": url})
 
     return stored

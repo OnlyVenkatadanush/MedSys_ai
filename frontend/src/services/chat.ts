@@ -77,6 +77,7 @@ export async function sendSessionMessage(
   content: string,
   deepSearch = false,
   images?: string[],
+  specialty?: string,
 ): Promise<ChatMessage> {
   if (isMockMode) {
     return mockDelay(
@@ -93,7 +94,7 @@ export async function sendSessionMessage(
   }
   return apiFetch<ChatMessage>(`/chat/sessions/${sessionId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content, deepSearch, images }),
+    body: JSON.stringify({ content, deepSearch, images, specialty }),
   });
 }
 

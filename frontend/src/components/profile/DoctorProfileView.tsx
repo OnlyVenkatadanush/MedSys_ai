@@ -17,6 +17,7 @@ import {
   ExternalLink,
   X,
   Save,
+  BarChart3,
 } from "lucide-react";
 
 export interface DoctorProfileData {
@@ -59,6 +60,13 @@ export const DEFAULT_DOCTOR_PROFILE: DoctorProfileData = {
   ],
 };
 
+export interface DoctorProfileStats {
+  activePatients: number;
+  totalConsultations: number;
+  pendingLabReviews: number;
+  activeAlerts: number;
+}
+
 interface DoctorProfileViewProps {
   doctorData: DoctorProfileData;
   clerkUser?: {
@@ -67,12 +75,14 @@ interface DoctorProfileViewProps {
     imageUrl?: string;
   } | null;
   onUpdateDoctor: (updated: DoctorProfileData) => void;
+  stats?: DoctorProfileStats | null;
 }
 
 export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
   doctorData,
   clerkUser,
   onUpdateDoctor,
+  stats,
 }) => {
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<DoctorProfileData>(doctorData);
@@ -166,7 +176,7 @@ export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
             <Users className="h-4 w-4 text-teal-deep" />
             <span className="font-mono text-[11px] uppercase tracking-wider">Active Patients</span>
           </div>
-          <p className="font-mono text-2xl font-bold text-ink">24 <span className="text-xs font-normal text-stone">assigned</span></p>
+          <p className="font-mono text-2xl font-bold text-ink">{stats ? stats.activePatients : "—"} <span className="text-xs font-normal text-stone">assigned</span></p>
         </div>
 
         <div className="rounded-2xl border border-hairline bg-surface-card p-4 transition-all hover:border-teal-deep/30 shadow-2xs">
@@ -174,7 +184,7 @@ export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
             <FileCheck className="h-4 w-4 text-indigo-thread" />
             <span className="font-mono text-[11px] uppercase tracking-wider">Consultations</span>
           </div>
-          <p className="font-mono text-2xl font-bold text-ink">142 <span className="text-xs font-normal text-stone">cases</span></p>
+          <p className="font-mono text-2xl font-bold text-ink">{stats ? stats.totalConsultations : "—"} <span className="text-xs font-normal text-stone">cases</span></p>
         </div>
 
         <div className="rounded-2xl border border-hairline bg-surface-card p-4 transition-all hover:border-teal-deep/30 shadow-2xs">
@@ -182,7 +192,7 @@ export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
             <Activity className="h-4 w-4 text-amber-500" />
             <span className="font-mono text-[11px] uppercase tracking-wider">Lab Reviews</span>
           </div>
-          <p className="font-mono text-2xl font-bold text-ink">5 <span className="text-xs font-normal text-stone">pending</span></p>
+          <p className="font-mono text-2xl font-bold text-ink">{stats ? stats.pendingLabReviews : "—"} <span className="text-xs font-normal text-stone">pending</span></p>
         </div>
 
         <div className="rounded-2xl border border-hairline bg-surface-card p-4 transition-all hover:border-teal-deep/30 shadow-2xs">
@@ -190,7 +200,7 @@ export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
             <AlertTriangle className="h-4 w-4 text-rose-500" />
             <span className="font-mono text-[11px] uppercase tracking-wider">Triage Alerts</span>
           </div>
-          <p className="font-mono text-2xl font-bold text-rose-600">3 <span className="text-xs font-normal text-stone">triaged</span></p>
+          <p className="font-mono text-2xl font-bold text-rose-600">{stats ? stats.activeAlerts : "—"} <span className="text-xs font-normal text-stone">active</span></p>
         </div>
       </div>
 
@@ -303,12 +313,12 @@ export const DoctorProfileView: React.FC<DoctorProfileViewProps> = ({
             </h2>
 
             <Link
-              to="/doctor/dashboard"
+              to="/doctor/analytics"
               className="flex items-center justify-between rounded-xl border border-hairline bg-bg-mist p-3 text-xs font-semibold text-ink transition-all hover:border-teal-deep hover:text-teal-deep"
             >
               <div className="flex items-center gap-2">
-                <Stethoscope className="h-4 w-4 text-teal-deep" />
-                <span>Command Center</span>
+                <BarChart3 className="h-4 w-4 text-teal-deep" />
+                <span>Analytics</span>
               </div>
               <ExternalLink className="h-3.5 w-3.5" />
             </Link>

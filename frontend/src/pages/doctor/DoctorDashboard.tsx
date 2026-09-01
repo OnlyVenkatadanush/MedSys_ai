@@ -45,12 +45,7 @@ export const DoctorDashboard: React.FC = () => {
     }
   };
 
-  const selectedPatient = patients.find((p) => p.patient_id === selectedPatientId) || {
-    patient_name: "John Doe",
-    patient_age: 42,
-    patient_gender: "Male",
-    patient_id: "pat_01",
-  };
+  const selectedPatient = patients.find((p) => p.patient_id === selectedPatientId) || null;
 
   return (
     <div className="space-y-8 pb-16">
@@ -101,6 +96,9 @@ export const DoctorDashboard: React.FC = () => {
               <span className="font-mono text-xs text-stone">({patients.length})</span>
             </h2>
             <div className="space-y-3">
+              {patients.length === 0 && !loading && (
+                <p className="font-mono text-xs text-stone italic">No patients assigned yet.</p>
+              )}
               {patients.map((p) => {
                 const isSelected = p.patient_id === selectedPatientId;
                 return (
@@ -120,9 +118,9 @@ export const DoctorDashboard: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex items-center gap-3 font-mono text-xs text-stone mt-2">
-                      <span>{p.patient_age}y</span>
+                      <span>{p.patient_age != null ? `${p.patient_age}y` : "—"}</span>
                       <span>•</span>
-                      <span>{p.patient_gender || "N/A"}</span>
+                      <span>{p.patient_gender || "—"}</span>
                       <span>•</span>
                       <span>ID: {p.patient_id}</span>
                     </div>
@@ -137,7 +135,7 @@ export const DoctorDashboard: React.FC = () => {
             <div className="flex items-center justify-between border-b border-hairline pb-4">
               <div>
                 <h2 className="font-display text-xl tracking-tight text-ink">
-                  Clinical Timeline: {selectedPatient.patient_name}
+                  Clinical Timeline: {selectedPatient?.patient_name || "No patient selected"}
                 </h2>
                 <p className="font-mono text-xs text-stone mt-1">
                   Full patient medical records, past doctor sign-offs, and lab documents.
@@ -158,25 +156,25 @@ export const DoctorDashboard: React.FC = () => {
                   <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                     <span className="font-mono text-[11px] text-stone uppercase tracking-wider block">Age / Gender</span>
                     <span className="font-display text-sm text-ink font-semibold">
-                      {timeline.profile?.age || 42}y / {selectedPatient.patient_gender || "Male"}
+                      {timeline.profile?.age != null ? `${timeline.profile.age}y` : "—"} / {selectedPatient?.patient_gender || "—"}
                     </span>
                   </div>
                   <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                     <span className="font-mono text-[11px] text-stone uppercase tracking-wider block">Blood Group</span>
                     <span className="font-display text-sm text-clay-alert font-semibold">
-                      {timeline.profile?.bloodGroup || "O+"}
+                      {timeline.profile?.bloodGroup || "—"}
                     </span>
                   </div>
                   <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                     <span className="font-mono text-[11px] text-stone uppercase tracking-wider block">Weight / BMI</span>
                     <span className="font-display text-sm text-teal-deep font-semibold">
-                      {timeline.profile?.weightKg || 75} kg
+                      {timeline.profile?.weightKg != null ? `${timeline.profile.weightKg} kg` : "—"}
                     </span>
                   </div>
                   <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                     <span className="font-mono text-[11px] text-stone uppercase tracking-wider block">Chronic Conditions</span>
                     <span className="font-sans text-xs text-ink font-medium">
-                      {(timeline.profile?.conditions || ["Hypertension"]).join(", ")}
+                      {timeline.profile?.conditions?.length ? timeline.profile.conditions.join(", ") : "None recorded"}
                     </span>
                   </div>
                 </div>
@@ -254,7 +252,7 @@ export const DoctorDashboard: React.FC = () => {
         </div>
       </div>
 
-      {showConsultModal && (
+      {showConsultModal && selectedPatient && (
         <ConsultationSessionModal
           patientId={selectedPatientId}
           patientName={selectedPatient.patient_name}

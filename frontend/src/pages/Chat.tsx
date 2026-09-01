@@ -6,7 +6,7 @@ import { Composer } from "@/components/chat/Composer";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
 import { SourceModal } from "@/components/SourceModal";
 import { SessionList } from "@/components/chat/SessionList";
-import { ModelIndicator } from "@/components/chat/ModelIndicator";
+import { ModelIndicator, type ModelOption } from "@/components/chat/ModelIndicator";
 import { staggerContainer, riseIn, riseInReduced } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
@@ -18,11 +18,11 @@ import {
   sendSessionMessage,
   setSessionSources,
 } from "@/services/chat";
-import { sendDoctorCopilotQuery } from "@/services/clinicalService";
+import { fetchAssignedPatients, sendDoctorCopilotQuery } from "@/services/clinicalService";
 import { listMyData } from "@/services/mydata";
 import { ApiError } from "@/services/client";
 import { User } from "lucide-react";
-import type { ChatMessage, ChatSession, ChatSource, ModelStatus } from "@/types";
+import type { ChatMessage, ChatSession, ChatSource, DoctorPatientAssignment, ModelStatus } from "@/types";
 
 function describeSendError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -58,11 +58,14 @@ export default function Chat({
   const [sending, setSending] = useState(false);
   const [sendingDeepSearch, setSendingDeepSearch] = useState(false);
   const [isModelSwitching, setIsModelSwitching] = useState(false);
+  const [activeSpecialty, setActiveSpecialty] = useState<string>("General Medicine");
   const [sendError, setSendError] = useState<string | null>(null);
   const [openSource, setOpenSource] = useState<ChatSource | null>(null);
-  const [selectedPatient, setSelectedPatient] = useState<string>("pat_01");
+  const [assignedPatients, setAssignedPatients] = useState<DoctorPatientAssignment[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<string>("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef(false);
   const reduced = useReducedMotion();
   const item = reduced ? riseInReduced : riseIn;
 
@@ -74,15 +77,34 @@ export default function Chat({
   );
 
   useEffect(() => {
-    listMyData().then(setAllSources);
-    getModelStatus().then(setModelStatus);
-    refreshSessions({ selectFirst: true });
+    // Guards against React StrictMode's dev-only double-invoke of mount
+    // effects: without this, a first-time visitor with zero existing
+    // sessions had refreshSessions() run twice concurrently, each seeing
+    // an empty list and independently creating its own "New chat" —
+    // producing two duplicate empty sessions in the sidebar. The ref
+    // itself survives StrictMode's synthetic unmount/remount, so this
+    // still only runs once per real mount.
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    listMyData().then(setAllSources).catch((err) => console.error("Failed to load sources", err));
+    getModelStatus().then(setModelStatus).catch((err) => console.error("Failed to load model status", err));
+    refreshSessions({ selectFirst: true }).catch((err) => console.error("Failed to load chat sessions", err));
+    if (doctorMode) {
+      fetchAssignedPatients()
+        .then((patients) => {
+          setAssignedPatients(patients);
+          if (patients.length > 0) setSelectedPatient(patients[0].patient_id);
+        })
+        .catch((err) => console.error("Failed to load assigned patients", err));
+    }
   }, []);
 
   useEffect(() => {
     if (!activeSessionId) return;
     setSendError(null);
-    getSessionMessages(activeSessionId).then(setMessages);
+    getSessionMessages(activeSessionId)
+      .then(setMessages)
+      .catch((err) => console.error("Failed to load session messages", err));
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -102,14 +124,23 @@ export default function Chat({
   }
 
   async function handleNewChat() {
-    const created = await createChatSession();
-    setSessions((prev) => [created, ...prev]);
-    setActiveSessionId(created.id);
-    setMessages([]);
+    try {
+      const created = await createChatSession();
+      setSessions((prev) => [created, ...prev]);
+      setActiveSessionId(created.id);
+      setMessages([]);
+    } catch (err) {
+      console.error("Failed to create chat session", err);
+    }
   }
 
   async function handleDeleteSession(id: string) {
-    await deleteChatSession(id);
+    try {
+      await deleteChatSession(id);
+    } catch (err) {
+      console.error("Failed to delete chat session", err);
+      return;
+    }
     setSessions((prev) => {
       const remaining = prev.filter((s) => s.id !== id);
       if (activeSessionId === id) {
@@ -117,11 +148,13 @@ export default function Chat({
           setActiveSessionId(remaining[0].id);
           setMessages([]);
         } else {
-          createChatSession().then((created) => {
-            setSessions([created]);
-            setActiveSessionId(created.id);
-            setMessages([]);
-          });
+          createChatSession()
+            .then((created) => {
+              setSessions([created]);
+              setActiveSessionId(created.id);
+              setMessages([]);
+            })
+            .catch((err) => console.error("Failed to create replacement chat session", err));
         }
       }
       return remaining;
@@ -130,6 +163,10 @@ export default function Chat({
 
   async function handleSend(content: string, deepSearch: boolean, images?: string[]) {
     if (!activeSessionId || isModelSwitching) return;
+    if (doctorMode && !selectedPatient) {
+      setSendError("Assign a patient to your panel before starting a copilot conversation.");
+      return;
+    }
     const userMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       role: "user",
@@ -154,7 +191,7 @@ export default function Chat({
         setMessages((prev) => [...prev, replyMessage]);
       } else {
         // Patient session chat
-        const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images);
+        const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images, activeSpecialty);
         setMessages((prev) => [...prev, reply]);
       }
       await Promise.all([refreshSessions(), listMyData().then(setAllSources)]);
@@ -174,7 +211,11 @@ export default function Chat({
     setSessions((prev) =>
       prev.map((s) => (s.id === activeSessionId ? { ...s, sourceIds: next } : s)),
     );
-    await setSessionSources(activeSessionId, next);
+    try {
+      await setSessionSources(activeSessionId, next);
+    } catch (err) {
+      console.error("Failed to update session sources", err);
+    }
   }
 
   return (
@@ -204,11 +245,18 @@ export default function Chat({
                 <select
                   value={selectedPatient}
                   onChange={(e) => setSelectedPatient(e.target.value)}
-                  className="rounded-xl border border-stone-300/80 bg-white px-3 py-1 font-mono text-xs font-semibold text-stone-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-stone-800"
+                  disabled={assignedPatients.length === 0}
+                  className="rounded-xl border border-stone-300/80 bg-white px-3 py-1 font-mono text-xs font-semibold text-stone-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-stone-800 disabled:opacity-50"
                 >
-                  <option value="pat_01">John Doe (pat_01)</option>
-                  <option value="pat_02">Emma Watson (pat_02)</option>
-                  <option value="pat_03">Robert Chen (pat_03)</option>
+                  {assignedPatients.length === 0 ? (
+                    <option value="">No patients assigned</option>
+                  ) : (
+                    assignedPatients.map((p) => (
+                      <option key={p.patient_id} value={p.patient_id}>
+                        {p.patient_name} ({p.patient_id})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             ) : (
@@ -221,6 +269,7 @@ export default function Chat({
               <ModelIndicator
                 status={modelStatus}
                 onSwitchingChange={setIsModelSwitching}
+                onModelChange={(model: ModelOption) => setActiveSpecialty(model.specialty)}
               />
             </div>
           </div>

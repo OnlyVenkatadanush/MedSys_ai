@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useUser } from "@clerk/clerk-react";
 import { PageHeader } from "@/components/PageHeader";
 import {
   fetchPatientOverview,
@@ -47,6 +48,7 @@ import {
 
 export const PatientWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const patientId = id || "pat_01";
   const activeTab = searchParams.get("tab") || "overview";
@@ -84,7 +86,7 @@ export const PatientWorkspace: React.FC = () => {
 
   // Contextual Copilot Chat state (auto-locked into current patient context)
   const [copilotMessages, setCopilotMessages] = useState<Array<{ sender: "doctor" | "ai"; text: string }>>([
-    { sender: "ai", text: `Hello Dr. Smith! I am locked into ${patientId} context. Ask me anything about this patient without needing @mentions.` },
+    { sender: "ai", text: `Hello ${user?.fullName || "Doctor"}! I am locked into ${patientId} context. Ask me anything about this patient without needing @mentions.` },
   ]);
   const [copilotInput, setCopilotInput] = useState<string>("");
 
@@ -225,9 +227,10 @@ export const PatientWorkspace: React.FC = () => {
     setSearchParams({ tab: t });
   };
 
-  const patientName = overview?.profile?.fullName || (patientId === "pat_01" ? "John Doe" : patientId === "pat_02" ? "Emma Watson" : "Robert Chen");
-  const age = overview?.profile?.age || 42;
-  const isAttention = patientId === "pat_03" || whatsNew?.attention_items_count! > 0;
+  const patientName = overview?.profile?.fullName || patientId;
+  const age = overview?.profile?.age ?? null;
+  const gender = overview?.profile?.gender || "—";
+  const isAttention = (whatsNew?.attention_items_count ?? 0) > 0;
 
   return (
     <div className="space-y-6 pb-16">
@@ -282,7 +285,7 @@ export const PatientWorkspace: React.FC = () => {
               <div className="flex items-center gap-3">
                 <h1 className="font-display text-2xl tracking-tight text-ink font-semibold">{patientName}</h1>
                 <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-teal-deep/10 text-teal-deep font-semibold">
-                  {age} • Male • {overview?.profile?.bloodGroup || "O+"} • ID: {patientId}
+                  {age ?? "—"} • {gender} • {overview?.profile?.bloodGroup || "—"} • ID: {patientId}
                 </span>
                 <span
                   className={`font-mono text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${
@@ -318,22 +321,24 @@ export const PatientWorkspace: React.FC = () => {
         <div className="rounded-2xl border border-hairline bg-bg-mist p-4 grid grid-cols-2 sm:grid-cols-5 gap-4 font-mono text-xs shadow-xs">
           <div>
             <span className="text-stone text-[10px] uppercase block">Diagnosis</span>
-            <span className="font-semibold text-ink">{overview?.latest_diagnosis || "Diabetes & Hypertension"}</span>
+            <span className="font-semibold text-ink">{overview?.latest_diagnosis || "Not yet diagnosed"}</span>
           </div>
           <div>
             <span className="text-stone text-[10px] uppercase block">Adherence</span>
-            <span className="font-semibold text-teal-deep font-bold">{overview?.adherence_rate || "87%"}</span>
+            <span className="font-semibold text-teal-deep font-bold">{overview?.adherence_rate || "No data"}</span>
           </div>
           <div>
             <span className="text-stone text-[10px] uppercase block">Last Visit</span>
-            <span className="font-semibold text-ink">{whatsNew?.last_visit_date || "Aug 12"}</span>
+            <span className="font-semibold text-ink">{whatsNew?.last_visit_date || "No prior visit"}</span>
           </div>
           <div>
             <span className="text-stone text-[10px] uppercase block">Next Visit</span>
-            <span className="font-semibold text-ink">Aug 30</span>
+            <span className="font-semibold text-ink">
+              {overview?.next_appointment_date ? new Date(overview.next_appointment_date).toLocaleDateString() : "Not scheduled"}
+            </span>
           </div>
           <div className="col-span-2 sm:col-span-1 rounded-xl bg-clay-alert/10 border border-clay-alert/20 p-2 text-center text-clay-alert font-bold">
-            ⚠ {whatsNew?.attention_items_count || 2} items need attention
+            ⚠ {whatsNew?.attention_items_count ?? 0} items need attention
           </div>
         </div>
 
@@ -435,15 +440,21 @@ export const PatientWorkspace: React.FC = () => {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 font-mono text-xs">
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                         <span className="text-stone block text-[10px] uppercase">Chronic Conditions</span>
-                        <span className="font-semibold text-ink">{overview?.profile?.conditions?.join(", ") || "Hypertension"}</span>
+                        <span className="font-semibold text-ink">{overview?.profile?.conditions?.join(", ") || "None recorded"}</span>
                       </div>
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                         <span className="text-stone block text-[10px] uppercase">Allergies</span>
-                        <span className="font-semibold text-clay-alert">Penicillin (Severe)</span>
+                        <span className="font-semibold text-clay-alert">
+                          {overview?.profile?.allergies?.join(", ") || "No known allergies recorded"}
+                        </span>
                       </div>
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3">
                         <span className="text-stone block text-[10px] uppercase">Active Prescriptions</span>
-                        <span className="font-semibold text-ink">Lisinopril 10mg, Metformin 500mg</span>
+                        <span className="font-semibold text-ink">
+                          {timeline?.active_medications?.length
+                            ? timeline.active_medications.map((m: any) => `${m.medication_name} ${m.dosage}`).join(", ")
+                            : "No active prescriptions"}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -455,19 +466,27 @@ export const PatientWorkspace: React.FC = () => {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3 text-center">
                         <span className="text-stone text-[10px] block">Blood Pressure</span>
-                        <span className="font-display font-bold text-base text-ink">135/85</span>
+                        <span className="font-display font-bold text-base text-ink">
+                          {overview?.latest_vitals ? `${overview.latest_vitals.systolic_bp}/${overview.latest_vitals.diastolic_bp}` : "—"}
+                        </span>
                       </div>
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3 text-center">
                         <span className="text-stone text-[10px] block">Heart Rate</span>
-                        <span className="font-display font-bold text-base text-ink">78 bpm</span>
+                        <span className="font-display font-bold text-base text-ink">
+                          {overview?.latest_vitals?.heart_rate != null ? `${overview.latest_vitals.heart_rate} bpm` : "—"}
+                        </span>
                       </div>
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3 text-center">
                         <span className="text-stone text-[10px] block">Temperature</span>
-                        <span className="font-display font-bold text-base text-ink">38.2 °C</span>
+                        <span className="font-display font-bold text-base text-ink">
+                          {overview?.latest_vitals?.temperature_c != null ? `${overview.latest_vitals.temperature_c} °C` : "—"}
+                        </span>
                       </div>
                       <div className="rounded-xl border border-hairline bg-bg-mist p-3 text-center">
                         <span className="text-stone text-[10px] block">Spo2</span>
-                        <span className="font-display font-bold text-base text-teal-deep">98%</span>
+                        <span className="font-display font-bold text-base text-teal-deep">
+                          {overview?.latest_vitals?.spo2_pct != null ? `${overview.latest_vitals.spo2_pct}%` : "—"}
+                        </span>
                       </div>
                     </div>
                   </div>

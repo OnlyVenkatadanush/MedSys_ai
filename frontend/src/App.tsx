@@ -4,13 +4,14 @@ import { ProtectedLayout } from "@/components/auth/ProtectedLayout";
 import Landing from "@/pages/Landing";
 import FindCare from "@/pages/FindCare";
 import Profile from "@/pages/Profile";
+import Home from "@/pages/Home";
+import MyData from "@/pages/MyData";
 
 import { SelectRolePage } from "@/pages/auth/SelectRolePage";
 import { RoleLoginPage } from "@/pages/auth/RoleLoginPage";
 import { DoctorRegistrationPage } from "@/pages/auth/DoctorRegistration";
 import { PatientActivationPage } from "@/pages/auth/PatientActivationPage";
 
-import { DoctorCommandCenter } from "@/pages/doctor/DoctorCommandCenter";
 import { MyPatients } from "@/pages/doctor/MyPatients";
 import { AddPatientWizard } from "@/pages/doctor/AddPatientWizard";
 import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
@@ -43,10 +44,10 @@ export default function App() {
 
         {/* Protected App Shell */}
         <Route element={<ProtectedLayout />}>
-          <Route path="/dashboard" element={<Navigate to="/doctor/dashboard" replace />} />
-          
+          <Route path="/dashboard" element={<Navigate to="/doctor/patients" replace />} />
+
           {/* Doctor Portal Routes */}
-          <Route path="/doctor/dashboard" element={<DoctorCommandCenter />} />
+          <Route path="/doctor/dashboard" element={<Navigate to="/doctor/patients" replace />} />
           <Route path="/doctor/patients" element={<MyPatients />} />
           <Route path="/doctor/add-patient" element={<AddPatientWizard />} />
           <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />
@@ -67,6 +68,8 @@ export default function App() {
           <Route path="/find-care" element={<FindCare />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/chat" element={<PatientChat />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/mydata" element={<MyData />} />
         </Route>
       </Routes>
     </>

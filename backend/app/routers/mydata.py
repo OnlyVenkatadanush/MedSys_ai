@@ -45,5 +45,5 @@ async def upload_mydata(
     extracted = await model_router.extract_medical_history([report])
 
     source = rag.ingest_report(filename, kind, report, owner_id=user_id, extracted=extracted)
-    await supermemory_client.log_document(source["id"], filename, kind, report)
+    await supermemory_client.log_document(source["id"], filename, kind, report, user_id)
     return source

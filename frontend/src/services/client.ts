@@ -1,7 +1,10 @@
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || "http://localhost:8000";
+const CONFIGURED_API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
+export const API_BASE_URL = CONFIGURED_API_BASE_URL || "http://localhost:8000";
 
-/** True when no backend base URL is configured — UI runs on mock data. */
-export const isMockMode = !API_BASE_URL;
+/** True only when VITE_API_BASE_URL was left unset — the one case where
+ * there is no real backend to fail against, so mock data is a deliberate
+ * standalone-demo mode rather than a mask over a real error. */
+export const isMockMode = !CONFIGURED_API_BASE_URL;
 
 export class ApiError extends Error {
   status?: number;
@@ -38,11 +41,65 @@ export function getActiveRoleOverride(): "doctor" | "patient" {
   return currentRoleOverride || (localStorage.getItem("medsys_role") as "doctor" | "patient") || "doctor";
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
+/**
+ * True only once the Demo Credentials form has actually been submitted —
+ * distinct from `medsys_role`, which gets set as soon as you click a role
+ * card on /select-role, before any real authentication has happened. This
+ * is what ProtectedLayout checks to decide whether an unauthenticated
+ * visitor gets in, so merely picking a role can't bypass sign-in.
+ */
+export function setDemoAuthenticated(value: boolean) {
+  try {
+    if (value) {
+      localStorage.setItem("medsys_demo_authenticated", "true");
+    } else {
+      localStorage.removeItem("medsys_demo_authenticated");
+    }
+  } catch {}
+}
+
+export function isDemoAuthenticated(): boolean {
+  try {
+    return localStorage.getItem("medsys_demo_authenticated") === "true";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A random id generated once per browser and persisted in localStorage.
+ * Only used when there's no real Clerk session (demo mode): the backend
+ * auto-provisions an isolated demo doctor/patient identity keyed by this id,
+ * so two different demo browsers never collide on the same data the way the
+ * old hardcoded doc_01/pat_01 fallback did.
+ */
+function getOrCreateDemoSessionId(): string {
+  try {
+    let id = localStorage.getItem("medsys_demo_session_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("medsys_demo_session_id", id);
+    }
+    return id;
+  } catch {
+    return "ephemeral-" + Math.random().toString(36).slice(2);
+  }
+}
+
+/**
+ * Builds the identity headers (Authorization + X-User-Role + X-Demo-Session-Id)
+ * every request needs. Exported for the rare page that must use a raw
+ * `fetch` instead of `apiFetch`/`apiUpload` — e.g. because it needs
+ * `FormData`/multipart handling `apiFetch` doesn't support. Never hand-build
+ * these headers (or a fake Authorization value) in a page component — that
+ * bypasses real Clerk/demo identity resolution.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
   const token = getAuthToken ? await getAuthToken() : null;
   const activeRole = getActiveRoleOverride();
   const headers: Record<string, string> = {
     "X-User-Role": activeRole,
+    "X-Demo-Session-Id": getOrCreateDemoSessionId(),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -51,47 +108,43 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  try {
-    const headers = await authHeaders();
-    const res = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-        ...(init?.headers || {}),
-      },
-    });
-    if (!res.ok) {
-      throw new ApiError(`Request to ${path} failed`, res.status, await readErrorDetail(res));
-    }
-    if (res.status === 204) {
-      return undefined as T;
-    }
-    return res.json() as Promise<T>;
-  } catch (err) {
-    console.warn(`[apiFetch] API call to ${path} failed, using local fallback.`, err);
+  if (isMockMode) {
     return getFallbackData<T>(path);
   }
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...headers,
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    throw new ApiError(`Request to ${path} failed`, res.status, await readErrorDetail(res));
+  }
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  return res.json() as Promise<T>;
 }
 
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
-  try {
-    const headers = await authHeaders();
-    const res = await fetch(`${API_BASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        ...headers,
-      },
-      body: formData,
-    });
-    if (!res.ok) {
-      throw new ApiError(`Upload to ${path} failed`, res.status);
-    }
-    return res.json() as Promise<T>;
-  } catch (err) {
-    console.warn(`[apiUpload] Upload to ${path} failed, using local fallback.`, err);
+  if (isMockMode) {
     return getFallbackData<T>(path);
   }
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      ...headers,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    throw new ApiError(`Upload to ${path} failed`, res.status, await readErrorDetail(res));
+  }
+  return res.json() as Promise<T>;
 }
 
 function getFallbackData<T>(path: string): T {

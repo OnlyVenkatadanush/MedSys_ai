@@ -24,7 +24,11 @@ def _clerk_issuer_from_publishable_key(publishable_key: str) -> str:
 
 class Settings:
     mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    mongodb_db: str = os.getenv("MONGODB_DB", "medsys_ai")
+    # Two isolated databases on the same Atlas cluster: one holds doctor
+    # accounts only, the other holds every patient-owned/patient-attributable
+    # collection. See app/db.py for which collections live where.
+    mongodb_doctor_db: str = os.getenv("MONGODB_DOCTOR_DB", "medsys_doctor")
+    mongodb_patient_db: str = os.getenv("MONGODB_PATIENT_DB", "medsys_patient")
 
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "")
@@ -48,7 +52,8 @@ class Settings:
         "SUPERMEMORY_CHAT_CONTAINER_TAG", "medsys-chat"
     )
 
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
+    pinecone_index: str = os.getenv("PINECONE_INDEX", "Default")
 
     clerk_secret_key: str = os.getenv("CLERK_SECRET_KEY", "")
     clerk_publishable_key: str = os.getenv("CLERK_PUBLISHABLE_KEY", "")
@@ -59,6 +64,13 @@ class Settings:
     tomtom_api_key: str = os.getenv("TOMTOM_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    # When on, unauthenticated requests get an isolated per-browser demo
+    # identity (see services/clerk_auth.py) instead of being rejected.
+    # Never a shared identity — each demo browser session is auto-provisioned
+    # its own doctor/patient row, keyed by the client-generated
+    # X-Demo-Session-Id header.
+    medsys_demo_mode: bool = os.getenv("MEDSYS_DEMO_MODE", "true").strip().lower() in ("1", "true", "yes")
 
 
     cors_origins: list[str] = [

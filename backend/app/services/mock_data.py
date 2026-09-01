@@ -140,3 +140,28 @@ DEFAULT_PROFILE = {
     "vitalsGoal": {"systolic": 120, "diastolic": 80, "restingHeartRateBpm": 72, "glucoseMgDl": 100},
 }
 
+DEFAULT_DOCTOR_PROFILE = {
+    "fullName": "Dr. Sarah Smith",
+    "title": "Senior Cardiologist & Clinical Lead",
+    "specialty": "Cardiology & Internal Medicine",
+    "licenseNumber": "NMC-89241-IN",
+    "hospital": "Apollo Medical Center & MedSys Virtual Clinic",
+    "experienceYears": 12,
+    "email": "dr.sarah.smith@medsys.ai",
+    "phone": "+1 (555) 234-5678",
+    "consultationHours": "Mon - Fri: 09:00 AM - 05:00 PM",
+    "bio": "Board-certified physician specializing in interventional cardiology, cardiovascular risk reduction, and AI-assisted clinical decision support.",
+    "specializations": [
+        "Interventional Cardiology",
+        "Hypertension & Risk Reduction",
+        "Electrocardiography (ECG)",
+        "Emergency Clinical Triage",
+        "Pharmacotherapy & Med Safety",
+    ],
+    "boardCertifications": [
+        "American Board of Internal Medicine (ABIM)",
+        "Fellow of the American College of Cardiology (FACC)",
+        "National Board of Medical Examiners (NBME)",
+    ],
+}
+

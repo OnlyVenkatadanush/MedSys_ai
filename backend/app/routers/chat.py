@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.config import settings
-from app.db import get_db
+from app.db import get_patient_db
 from app.models import (
     ChatMessage,
     ChatMessageIn,
@@ -18,6 +18,7 @@ from app.services import (
     ai_graph_builder,
     med_safety,
     model_router,
+    pinecone_client,
     quick_options,
     rag,
     supermemory_client,
@@ -31,6 +32,36 @@ from app.services.mock_data import CHAT_SOURCES
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# Mirrors the MEDGEMMA_MODELS specialty labels in
+# frontend/src/components/chat/ModelIndicator.tsx. "General Medicine" (the
+# base model) and any unrecognized value fall through to the unrestricted
+# system prompt below — every other key here gets a strict domain lock.
+SPECIALTY_DOMAINS: dict[str, str] = {
+    "Radiology": "medical imaging — X-rays, CT scans, MRI, ultrasound, PET scans, and interpretation of radiological findings",
+    "Dermatology": "skin, hair, and nail conditions — rashes, lesions, moles, acne, eczema, psoriasis, and dermoscopic findings",
+    "Pathology": "tissue histology, biopsy interpretation, cell pathology, and laboratory pathology findings",
+    "Ophthalmology": "eye and vision conditions — retinal health, fundus imaging, OCT scans, vision changes, and ocular disease",
+    "Chest X-Ray": "chest radiographs and thoracic imaging — lung fields, pneumothorax, pulmonary opacities, cardiac silhouette, and related thoracic findings",
+    "Clinical Reasoning": "structured differential diagnosis and step-by-step clinical reasoning across a patient's presenting symptoms",
+}
+
+
+def _specialty_preamble(specialty: str) -> str:
+    domain = SPECIALTY_DOMAINS[specialty]
+    return (
+        f"STRICT DOMAIN RESTRICTION — {specialty.upper()} ONLY:\n"
+        f"You are currently running as the {specialty} specialty model. You may ONLY answer "
+        f"questions about {domain}. If the patient's message is unrelated to {specialty} "
+        f"— including general symptoms, medications, or conditions outside this domain — "
+        f"you MUST NOT attempt to answer it, even partially. Instead, reply with exactly this "
+        f"and nothing else:\n"
+        f"\"This falls outside {specialty} — I'm currently restricted to {specialty}-only topics. "
+        f"Please switch to MedGemma 4B Base or a more relevant specialty model to continue.\"\n"
+        f"Do not add a partial answer, general advice, disclaimers, or extra commentary to that "
+        f"refusal. For messages that ARE within {specialty}, answer using the structure below, "
+        f"but keep every section strictly scoped to {specialty}.\n\n"
+    )
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -40,21 +71,32 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
 
 
-async def _remember_message(session_id: str, role: str, content: str) -> None:
-    rag.store_chat_message(session_id, role, content)
-    await supermemory_client.log_chat_message(session_id, role, content)
+async def _remember_message(session_id: str, role: str, content: str, user_id: str) -> None:
+    rag.store_chat_message(session_id, role, content, user_id)
+    await supermemory_client.log_chat_message(session_id, role, content, user_id)
+
+
+async def _refine_chat_title(db, session_id: str, user_message: str, assistant_reply: str) -> None:
+    """Runs in the background after the reply has already been sent —
+    swaps the session's quick raw-text title for a proper AI-generated
+    heading once it's ready, instead of making the user wait on it."""
+    try:
+        title = await model_router.generate_chat_title(user_message, assistant_reply)
+    except Exception:
+        return
+    db.chat_sessions.update_one({"id": session_id}, {"$set": {"title": title}})
 
 
 @router.get("/sessions", response_model=list[ChatSession])
 def list_sessions(user_id: str = Depends(require_clerk_auth)) -> list[dict]:
-    db = get_db()
+    db = get_patient_db()
     sessions = list(db.chat_sessions.find({"$or": [{"clerkUserId": user_id}, {"clerkUserId": {"$exists": False}}]}, {"_id": 0, "clerkUserId": 0}).sort("updatedAt", -1))
     return sessions
 
 
 @router.post("/sessions", response_model=ChatSession)
 def create_session(body: ChatSessionIn, user_id: str = Depends(require_clerk_auth)) -> dict:
-    db = get_db()
+    db = get_patient_db()
     session = {
         "id": _new_id("sess"),
         "clerkUserId": user_id,
@@ -71,7 +113,7 @@ def create_session(body: ChatSessionIn, user_id: str = Depends(require_clerk_aut
 
 @router.put("/sessions/{session_id}/sources", response_model=ChatSession)
 def set_session_sources(session_id: str, body: ChatSessionSourcesIn, user_id: str = Depends(require_clerk_auth)) -> dict:
-    db = get_db()
+    db = get_patient_db()
     session = db.chat_sessions.find_one({"id": session_id})
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -83,7 +125,7 @@ def set_session_sources(session_id: str, body: ChatSessionSourcesIn, user_id: st
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessage])
 def get_session_messages(session_id: str, user_id: str = Depends(require_clerk_auth)) -> list[dict]:
-    db = get_db()
+    db = get_patient_db()
     return list(
         db.chat_messages.find({"sessionId": session_id}, {"_id": 0}).sort("createdAt", 1)
     )
@@ -93,7 +135,7 @@ def get_session_messages(session_id: str, user_id: str = Depends(require_clerk_a
 async def post_session_message(
     session_id: str, body: ChatMessageIn, user_id: str = Depends(require_clerk_auth)
 ) -> dict:
-    db = get_db()
+    db = get_patient_db()
     session = db.chat_sessions.find_one({"id": session_id})
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -108,7 +150,7 @@ async def post_session_message(
         "createdAt": _now(),
     }
     db.chat_messages.insert_one({**user_message})
-    await _remember_message(session_id, "user", body.content)
+    await _remember_message(session_id, "user", body.content, user_id)
 
     # 1. Semantic Clinical Triage & Red-Flag Layer
     triage_result = await triage.eval_triage(body.content)
@@ -130,12 +172,14 @@ async def post_session_message(
             "isRedFlag": True,
         }
         db.chat_messages.insert_one({**assistant_message})
-        await _remember_message(session_id, "assistant", escalation_text)
+        await _remember_message(session_id, "assistant", escalation_text, user_id)
 
         update = {"updatedAt": _now()}
         if is_first_message:
             update["title"] = body.content[:60]
         db.chat_sessions.update_one({"id": session_id}, {"$set": update})
+        if is_first_message:
+            asyncio.create_task(_refine_chat_title(db, session_id, body.content, escalation_text))
         return assistant_message
 
     search_query = (
@@ -146,7 +190,7 @@ async def post_session_message(
 
     web_sources: list[dict] = []
     if search_query:
-        web_sources = await web_search.deep_search(search_query)
+        web_sources = await web_search.deep_search(search_query, user_id)
 
     web_source_ids = [f"web:{w['url']}" for w in web_sources]
     allowed_source_ids = [
@@ -159,7 +203,7 @@ async def post_session_message(
             {"id": session_id}, {"$addToSet": {"sourceIds": {"$each": web_source_ids}}}
         )
 
-    context_chunks = rag.retrieve(body.content, top_k=8, allowed_source_ids=allowed_source_ids)
+    context_chunks = rag.retrieve(body.content, user_id, top_k=8, allowed_source_ids=allowed_source_ids)
 
     # Concurrently fetch user profile & environment snapshot for Priority 1 grounding
     profile_task = asyncio.to_thread(db.profiles.find_one, {"clerkUserId": user_id}, {"_id": 0})
@@ -225,7 +269,7 @@ async def post_session_message(
             "4. Supportive Closing: Warmly invite them to share symptom updates, medication questions, or anything on their mind."
         )
     else:
-        system_instructions = (
+        base_instructions = (
             "You are MedSys, a warm, caring, and deeply clinical personal health companion. "
             "When a patient reports a symptom or health concern, provide a comprehensive, beautifully structured medical assessment in clean Markdown:\n\n"
             "RESPONSE STRUCTURE:\n"
@@ -250,6 +294,10 @@ async def post_session_message(
             "TL;DR\n"
             "Bulleted summary of key takeaways and safety rules at the bottom."
         )
+        if body.specialty in SPECIALTY_DOMAINS:
+            system_instructions = _specialty_preamble(body.specialty) + base_instructions
+        else:
+            system_instructions = base_instructions
 
     if context_parts:
         context_block = "\n\n".join(context_parts)
@@ -269,14 +317,14 @@ async def post_session_message(
     for symptom in entities["symptoms"]:
         try:
             normalized_symptom = await ai_graph_builder.normalize_symptom_name(symptom)
-            await supermemory_client.log_symptom(normalized_symptom, today)
+            await supermemory_client.log_symptom(normalized_symptom, today, user_id)
             symptom_tracker.update_symptom_state(user_id, normalized_symptom, status="active")
             asyncio.create_task(ai_graph_builder.compute_and_store_symptom_knowledge(normalized_symptom))
         except Exception:
             pass
     for medication in entities["medications"]:
         try:
-            await supermemory_client.log_medication(medication["name"], medication["dosage"], today)
+            await supermemory_client.log_medication(medication["name"], medication["dosage"], today, user_id)
         except httpx.HTTPError:
             pass
 
@@ -290,19 +338,21 @@ async def post_session_message(
     }
     db.chat_messages.insert_one({**assistant_message})
 
-    await _remember_message(session_id, "assistant", reply_text)
+    await _remember_message(session_id, "assistant", reply_text, user_id)
 
     update = {"updatedAt": _now()}
     if is_first_message:
         update["title"] = body.content[:60]
     db.chat_sessions.update_one({"id": session_id}, {"$set": update})
+    if is_first_message:
+        asyncio.create_task(_refine_chat_title(db, session_id, body.content, reply_text))
 
     return assistant_message
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
 def delete_session(session_id: str, user_id: str = Depends(require_clerk_auth)) -> None:
-    db = get_db()
+    db = get_patient_db()
     result = db.chat_sessions.delete_one({"id": session_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -311,14 +361,14 @@ def delete_session(session_id: str, user_id: str = Depends(require_clerk_auth)) 
 
 @router.get("/sources", response_model=list[ChatSource])
 def get_sources(user_id: str = Depends(require_clerk_auth)) -> list[dict]:
-    db = get_db()
+    db = get_patient_db()
     docs = list(db.sources.find({"$or": [{"clerkUserId": user_id}, {"clerkUserId": {"$exists": False}}]}, {"_id": 0}).sort("uploadedAt", -1))
     return docs if docs else CHAT_SOURCES
 
 
 @router.get("/sources/{source_id:path}/content")
 def get_source_content(source_id: str) -> dict:
-    db = get_db()
+    db = get_patient_db()
     source = db.sources.find_one({"id": source_id}, {"_id": 0})
     if not source:
         mock = next((s for s in CHAT_SOURCES if s["id"] == source_id), None)
@@ -337,12 +387,13 @@ def get_source_content(source_id: str) -> dict:
 
 
 @router.delete("/sources/{source_id:path}", status_code=204)
-def delete_source(source_id: str) -> None:
-    db = get_db()
-    result = db.sources.delete_one({"id": source_id})
-    if result.deleted_count == 0:
+def delete_source(source_id: str, user_id: str = Depends(require_clerk_auth)) -> None:
+    db = get_patient_db()
+    source = db.sources.find_one({"id": source_id})
+    if not source or source.get("clerkUserId") not in (user_id, None):
         raise HTTPException(status_code=404, detail="Source not found")
-    db.chunks.delete_many({"sourceId": source_id})
+    db.sources.delete_one({"id": source_id})
+    pinecone_client.delete_by_source(user_id, source_id)
     # Drop it from any chat session that had it selected for grounding, so
     # nothing references a source that no longer exists.
     db.chat_sessions.update_many({}, {"$pull": {"sourceIds": source_id}})

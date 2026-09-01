@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.db import get_db
+from app.db import get_patient_db
 from app.models_v2 import (
     ConsultationSession,
     DietPlan,
@@ -31,7 +31,7 @@ class PatientChatIn(BaseModel):
 
 def _ensure_sample_patient_data(patient_id: str):
     """Seeds default sample data for patient dashboard if first time viewing."""
-    db = get_db()
+    db = get_patient_db()
     # Ensure sample medication schedule
     if db.medication_schedules.count_documents({"patient_id": patient_id}) == 0:
         db.medication_schedules.insert_many([
@@ -93,7 +93,7 @@ async def get_patient_dashboard(
     user: AuthenticatedUser = Depends(require_role("patient")),
 ):
     """Retrieves patient dashboard: active care plan, finalized doctor advice, medication reminders, upcoming appointments."""
-    db = get_db()
+    db = get_patient_db()
     _ensure_sample_patient_data(user.user_id)
 
     finalized_consultations = list(
@@ -145,7 +145,7 @@ async def get_patient_medications(
     user: AuthenticatedUser = Depends(require_role("patient")),
 ):
     """Lists all active medication schedules & log history."""
-    db = get_db()
+    db = get_patient_db()
     _ensure_sample_patient_data(user.user_id)
     schedules = list(db.medication_schedules.find({"patient_id": user.user_id, "active": True}, {"_id": 0}))
     logs = list(db.medication_logs.find({"patient_id": user.user_id}, {"_id": 0}).sort("timestamp", -1).limit(20))
@@ -158,7 +158,7 @@ async def log_medication_dose(
     user: AuthenticatedUser = Depends(require_role("patient")),
 ):
     """Patient confirms taking or skipping a scheduled medication dose."""
-    db = get_db()
+    db = get_patient_db()
     now = datetime.now(timezone.utc).isoformat()
     record = MedicationLogRecord(
         id=f"medlog_{uuid.uuid4().hex[:10]}",
@@ -188,7 +188,7 @@ async def get_patient_diet_plan(
     user: AuthenticatedUser = Depends(require_role("patient")),
 ):
     """Retrieves patient diet recommendations and logged meals."""
-    db = get_db()
+    db = get_patient_db()
     plan = db.diet_plans.find_one({"patient_id": user.user_id}, {"_id": 0})
     meals = list(db.meal_logs.find({"patient_id": user.user_id}, {"_id": 0}).sort("timestamp", -1).limit(15))
     return {"diet_plan": plan, "meal_logs": meals}
@@ -200,7 +200,7 @@ async def log_patient_meal(
     user: AuthenticatedUser = Depends(require_role("patient")),
 ):
     """Logs a meal for patient nutrition tracking."""
-    db = get_db()
+    db = get_patient_db()
     now = datetime.now(timezone.utc).isoformat()
     record = MealLogRecord(
         id=f"meal_{uuid.uuid4().hex[:10]}",
@@ -221,7 +221,7 @@ async def patient_clarification_chat(
 ):
     """Patient Clarification Chatbot: Answers patient queries grounded in their authorized doctor advice with emergency triage guardrails."""
     triage = evaluate_emergency_triage(payload.message)
-    db = get_db()
+    db = get_patient_db()
     now = datetime.now(timezone.utc).isoformat()
 
     # If critical red flag symptoms detected, trigger immediate emergency response

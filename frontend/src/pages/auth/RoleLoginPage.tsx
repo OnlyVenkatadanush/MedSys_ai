@@ -1,33 +1,48 @@
-import React, { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { SignIn, SignUp } from "@clerk/clerk-react";
 import { Stethoscope, User, Lock, Mail, ArrowRight, CheckCircle, KeyRound } from "lucide-react";
-import { setActiveRoleOverride } from "@/services/client";
+import { setActiveRoleOverride, setDemoAuthenticated } from "@/services/client";
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 export function RoleLoginPage() {
   const { role } = useParams<{ role?: string }>();
   const navigate = useNavigate();
-  
+  const location = useLocation();
+
   const selectedRole: "doctor" | "patient" = role === "patient" ? "patient" : "doctor";
   const isDoctor = selectedRole === "doctor";
-  const redirectUrl = isDoctor ? "/doctor/dashboard" : "/patient/dashboard";
+  const redirectUrl = isDoctor ? "/doctor/patients" : "/home";
+  // Mounted at both /sign-in/:role and /sign-up/:role (App.tsx) — which one
+  // renders must follow the ACTUAL url, not a local flag. Clerk's own
+  // <SignIn>/<SignUp> widgets cross-link to each other (signUpUrl/signInUrl
+  // below) and navigate the browser there directly; if this page kept
+  // rendering <SignIn path="/sign-in/..."> while the url had already moved
+  // to /sign-up/..., Clerk's routing="path" mode sees its declared `path`
+  // disagree with the real address and renders nothing.
+  const isSignUp = location.pathname.startsWith("/sign-up");
 
   const [authMode, setAuthMode] = useState<"clerk" | "credentials">("clerk");
-  const [isSignUp, setIsSignUp] = useState<boolean>(false);
   const [email, setEmail] = useState<string>(
     isDoctor ? "dr.smith@medsys.ai" : "john.doe@example.com"
   );
   const [password, setPassword] = useState<string>("••••••••••••");
   const [loading, setLoading] = useState<boolean>(false);
 
+  // Persist the intended role as soon as this page renders — not just when
+  // the Demo Credentials form submits — so a real Clerk sign-in (Google
+  // etc.) also carries it through the OAuth redirect. ProfileSetup reads
+  // this back to skip its own "doctor or patient?" picker on first login.
+  useEffect(() => {
+    setActiveRoleOverride(selectedRole);
+    localStorage.setItem("medsys_role", selectedRole);
+  }, [selectedRole]);
+
   const handleCredentialSignIn = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
-    setActiveRoleOverride(selectedRole);
-    localStorage.setItem("medsys_role", selectedRole);
+    setDemoAuthenticated(true);
 
     setTimeout(() => {
       setLoading(false);
@@ -67,7 +82,7 @@ export function RoleLoginPage() {
             )}
           </div>
           <h1 className="font-display text-3xl tracking-tight text-ink">
-            {isDoctor ? "Doctor Sign In" : "Patient Sign In"}
+            {isDoctor ? "Doctor" : "Patient"} {isSignUp ? "Sign Up" : "Sign In"}
           </h1>
           <p className="text-stone text-xs">
             {isDoctor
