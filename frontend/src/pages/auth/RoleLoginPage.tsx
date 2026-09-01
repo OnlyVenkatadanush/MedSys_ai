@@ -13,7 +13,7 @@ export function RoleLoginPage() {
 
   const selectedRole: "doctor" | "patient" = role === "patient" ? "patient" : "doctor";
   const isDoctor = selectedRole === "doctor";
-  const redirectUrl = isDoctor ? "/doctor/patients" : "/home";
+  const redirectUrl = isDoctor ? "/doctor/dashboard" : "/home";
   // Mounted at both /sign-in/:role and /sign-up/:role (App.tsx) — which one
   // renders must follow the ACTUAL url, not a local flag. Clerk's own
   // <SignIn>/<SignUp> widgets cross-link to each other (signUpUrl/signInUrl

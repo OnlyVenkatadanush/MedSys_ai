@@ -162,54 +162,53 @@ async def list_doctor_appointments(
     """Doctor Endpoint: Lists incoming appointment requests & scheduled appointments for approval."""
     db = get_patient_db()
 
+    if db.appointments.count_documents({"doctor_id": user.user_id}) == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        db.appointments.insert_many([
+            {
+                "id": f"apt_{uuid.uuid4().hex[:10]}",
+                "patient_id": "pat_01",
+                "doctor_id": user.user_id,
+                "patient_name": "John Doe",
+                "doctor_name": user.full_name,
+                "appointment_date": "2026-09-05T10:00:00Z",
+                "reason": "Blood Pressure Routine Follow-up & Medication Renewal",
+                "status": "requested",
+                "notes": "Patient requested morning slot.",
+                "created_at": now,
+            },
+            {
+                "id": f"apt_{uuid.uuid4().hex[:10]}",
+                "patient_id": "pat_02",
+                "doctor_id": user.user_id,
+                "patient_name": "Emma Watson",
+                "doctor_name": user.full_name,
+                "appointment_date": "2026-09-06T14:30:00Z",
+                "reason": "Asthma Symptom Evaluation & Inhaler Review",
+                "status": "confirmed",
+                "notes": "Confirmed by clinician.",
+                "created_at": now,
+            },
+        ])
+
     query = {"doctor_id": user.user_id}
     if status_filter:
         query["status"] = status_filter
 
     rows = list(db.appointments.find(query, {"_id": 0}).sort("created_at", -1))
 
-    if not rows:
-        # Seed default sample appointments if none exist
-        now = datetime.now(timezone.utc).isoformat()
-        return [
-            AppointmentRecord(
-                id="apt_sample_01",
-                patient_id="pat_01",
-                doctor_id=user.user_id,
-                patient_name="John Doe",
-                doctor_name=user.full_name,
-                appointment_date="2026-09-05T10:00:00Z",
-                reason="Blood Pressure Routine Follow-up & Medication Renewal",
-                status="requested",
-                notes="Patient requested morning slot.",
-                created_at=now,
-            ),
-            AppointmentRecord(
-                id="apt_sample_02",
-                patient_id="pat_02",
-                doctor_id=user.user_id,
-                patient_name="Sarah Connor",
-                doctor_name=user.full_name,
-                appointment_date="2026-09-06T14:30:00Z",
-                reason="Asthma Symptom Evaluation & Inhaler Review",
-                status="confirmed",
-                notes="Confirmed by Dr. Sarah Smith.",
-                created_at=now,
-            ),
-        ]
-
     return [
         AppointmentRecord(
             id=r["id"],
             patient_id=r["patient_id"],
             doctor_id=r["doctor_id"],
-            patient_name=r["patient_name"] or "Patient Record",
-            doctor_name=r["doctor_name"] or user.full_name,
-            appointment_date=r["appointment_date"],
-            reason=r["reason"] or "Intake",
-            status=r["status"],
-            notes=r["notes"] or "",
-            created_at=r["created_at"],
+            patient_name=r.get("patient_name") or "Patient Record",
+            doctor_name=r.get("doctor_name") or user.full_name,
+            appointment_date=r.get("appointment_date") or r.get("date_time", ""),
+            reason=r.get("reason") or "Routine Visit",
+            status=r.get("status", "requested"),
+            notes=r.get("notes") or "",
+            created_at=r.get("created_at", ""),
         )
         for r in rows
     ]
@@ -224,37 +223,35 @@ async def list_patient_appointments(
 
     patient_id = user.user_id if user.role == "patient" else "pat_01"
 
-    rows = list(db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1))
-
-    if not rows:
+    if db.appointments.count_documents({"patient_id": patient_id}) == 0:
         now = datetime.now(timezone.utc).isoformat()
-        return [
-            AppointmentRecord(
-                id="apt_sample_01",
-                patient_id=patient_id,
-                doctor_id="doc_01",
-                patient_name=user.full_name,
-                doctor_name="Dr. Sarah Smith, MD",
-                appointment_date="2026-09-05T10:00:00Z",
-                reason="Routine Follow-up & Blood Pressure Check",
-                status="requested",
-                notes="Awaiting doctor confirmation.",
-                created_at=now,
-            )
-        ]
+        db.appointments.insert_one({
+            "id": f"apt_{uuid.uuid4().hex[:10]}",
+            "patient_id": patient_id,
+            "doctor_id": "doc_01",
+            "patient_name": user.full_name or "Patient",
+            "doctor_name": "Dr. Sarah Smith",
+            "appointment_date": "2026-09-05T10:00:00Z",
+            "reason": "Routine Follow-up & Blood Pressure Check",
+            "status": "requested",
+            "notes": "Awaiting doctor confirmation.",
+            "created_at": now,
+        })
+
+    rows = list(db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1))
 
     return [
         AppointmentRecord(
             id=r["id"],
             patient_id=r["patient_id"],
             doctor_id=r["doctor_id"],
-            patient_name=r["patient_name"] or user.full_name,
-            doctor_name=r["doctor_name"] or "Dr. Sarah Smith, MD",
-            appointment_date=r["appointment_date"],
-            reason=r["reason"] or "Clinical Consultation",
-            status=r["status"],
-            notes=r["notes"] or "",
-            created_at=r["created_at"],
+            patient_name=r.get("patient_name") or user.full_name,
+            doctor_name=r.get("doctor_name") or "Dr. Sarah Smith",
+            appointment_date=r.get("appointment_date") or r.get("date_time", ""),
+            reason=r.get("reason") or "Clinical Consultation",
+            status=r.get("status", "requested"),
+            notes=r.get("notes") or "",
+            created_at=r.get("created_at", ""),
         )
         for r in rows
     ]

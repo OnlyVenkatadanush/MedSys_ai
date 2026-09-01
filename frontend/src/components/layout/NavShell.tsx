@@ -10,6 +10,8 @@ import {
   Users,
   BarChart3,
   LogOut,
+  Calendar,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getActiveRoleOverride, setActiveRoleOverride, setDemoAuthenticated } from "@/services/client";
@@ -22,8 +24,10 @@ interface NavItem {
 }
 
 const DOCTOR_NAV_ITEMS: NavItem[] = [
-  { to: "/doctor/patients", label: "My Patients", icon: Users },
-  { to: "/doctor/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/doctor/dashboard", label: "Dashboard", icon: HomeIcon },
+  { to: "/doctor/patients", label: "Patients", icon: Users },
+  { to: "/doctor/copilot", label: "Clinical Copilot", icon: Sparkles },
+  { to: "/doctor/appointments", label: "Appointments", icon: Calendar },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 

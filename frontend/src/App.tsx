@@ -12,6 +12,8 @@ import { RoleLoginPage } from "@/pages/auth/RoleLoginPage";
 import { DoctorRegistrationPage } from "@/pages/auth/DoctorRegistration";
 import { PatientActivationPage } from "@/pages/auth/PatientActivationPage";
 
+import { DoctorCommandCenter } from "@/pages/doctor/DoctorCommandCenter";
+
 import { MyPatients } from "@/pages/doctor/MyPatients";
 import { AddPatientWizard } from "@/pages/doctor/AddPatientWizard";
 import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
@@ -44,10 +46,10 @@ export default function App() {
 
         {/* Protected App Shell */}
         <Route element={<ProtectedLayout />}>
-          <Route path="/dashboard" element={<Navigate to="/doctor/patients" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/doctor/dashboard" replace />} />
 
           {/* Doctor Portal Routes */}
-          <Route path="/doctor/dashboard" element={<Navigate to="/doctor/patients" replace />} />
+          <Route path="/doctor/dashboard" element={<DoctorCommandCenter />} />
           <Route path="/doctor/patients" element={<MyPatients />} />
           <Route path="/doctor/add-patient" element={<AddPatientWizard />} />
           <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />

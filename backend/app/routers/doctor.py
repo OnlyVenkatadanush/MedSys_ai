@@ -102,12 +102,13 @@ async def get_doctor_command_center(
             id=r["id"],
             patient_id=r["patient_id"],
             doctor_id=r["doctor_id"],
-            patient_name=r["patient_name"] or "Patient",
-            doctor_name=r["doctor_name"] or user.full_name,
-            date_time=r["appointment_date"],
-            reason=r["reason"] or "Routine Visit",
-            status=r["status"] or "confirmed",
-            created_at=r["created_at"],
+            patient_name=r.get("patient_name") or "Patient",
+            doctor_name=r.get("doctor_name") or user.full_name,
+            appointment_date=r.get("appointment_date") or r.get("date_time", ""),
+            reason=r.get("reason") or "Routine Visit",
+            status=r.get("status") or "confirmed",
+            notes=r.get("notes") or "",
+            created_at=r.get("created_at", ""),
         )
         for r in appt_rows
     ]
