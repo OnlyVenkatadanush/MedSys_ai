@@ -16,7 +16,7 @@ frontend/dist-ssr/
 .env.local
 *.local
 !.env.example
-
+*.db
 # Editor/OS
 .vscode/*
 !.vscode/extensions.json
