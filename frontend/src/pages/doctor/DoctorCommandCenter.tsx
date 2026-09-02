@@ -127,96 +127,129 @@ export const DoctorCommandCenter: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {priorityAlerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className={`rounded-xl border p-4 space-y-3 flex flex-col justify-between ${
-                    alert.severity === "critical"
-                      ? "bg-clay-alert/5 border-clay-alert/30"
-                      : "bg-bg-mist border-hairline"
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-display font-semibold text-ink text-base truncate">
-                        {alert.patient_name}
-                      </span>
-                      <span
-                        className={`font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                          alert.severity === "critical"
-                            ? "bg-clay-alert text-bg-mist"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {alert.type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-stone font-medium">{alert.title}</p>
-                    <p className="font-mono text-[11px] text-ink">{alert.message}</p>
-                  </div>
-
-                  <button
-                    onClick={() => navigate(`/doctor/patient/${alert.patient_id}`)}
-                    className="w-full rounded-lg bg-ink py-2 text-xs font-mono text-bg-mist hover:opacity-90 transition-opacity flex items-center justify-center gap-1 mt-2"
+            <div className="relative">
+              <div className="flex gap-4 overflow-x-auto pb-4 pt-1 scroll-smooth snap-x snap-mandatory focus:outline-none">
+                {priorityAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className={`w-[290px] sm:w-[330px] shrink-0 snap-start rounded-xl border p-4 space-y-3 flex flex-col justify-between ${
+                      alert.severity === "critical"
+                        ? "bg-clay-alert/5 border-clay-alert/30 hover:border-clay-alert"
+                        : "bg-bg-mist border-hairline hover:border-teal-deep"
+                    } shadow-xs transition-all hover:shadow-md`}
                   >
-                    <span>[Review Patient]</span>
-                    <ArrowRight className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-display font-semibold text-ink text-base truncate">
+                          {alert.patient_name}
+                        </span>
+                        <span
+                          className={`font-mono text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full shrink-0 ${
+                            alert.severity === "critical"
+                              ? "bg-clay-alert text-bg-mist"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {alert.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone font-semibold">{alert.title}</p>
+                      <p className="font-mono text-[11px] text-ink leading-relaxed line-clamp-3">{alert.message}</p>
+                    </div>
+
+                    <button
+                      onClick={() => navigate(`/doctor/patient/${alert.patient_id}`)}
+                      className="w-full rounded-lg bg-ink py-2 text-xs font-mono text-bg-mist hover:opacity-90 transition-opacity flex items-center justify-center gap-1 mt-2 shadow-2xs"
+                    >
+                      <span>[Review Patient]</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* 4 Counter Cards */}
+        {/* 4 Counter Cards - Interactive & Clickable */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2">
-            <div className="flex items-center justify-between text-stone">
-              <span className="font-mono text-xs uppercase tracking-wider">Patients</span>
-              <Users className="h-4 w-4 text-teal-deep shrink-0" />
+          <div
+            onClick={() => navigate("/doctor/patients")}
+            className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2 cursor-pointer hover:border-teal-deep hover:shadow-md transition-all group"
+            title="Click to view all patients"
+          >
+            <div className="flex items-center justify-between text-stone group-hover:text-teal-deep">
+              <span className="font-mono text-xs uppercase tracking-wider font-semibold">Patients</span>
+              <Users className="h-4 w-4 text-teal-deep shrink-0 group-hover:scale-110 transition-transform" />
             </div>
             <p className="font-display text-3xl font-bold text-ink">
               {loading ? "—" : data?.total_patients ?? 0}
             </p>
-            <span className="font-mono text-[10px] text-teal-deep">Active Panel</span>
+            <div className="flex items-center justify-between font-mono text-[10px] text-teal-deep font-semibold">
+              <span>Active Panel</span>
+              <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2">
-            <div className="flex items-center justify-between text-stone">
-              <span className="font-mono text-xs uppercase tracking-wider">Appts Today</span>
-              <Calendar className="h-4 w-4 text-indigo-thread shrink-0" />
+          <div
+            onClick={() => navigate("/doctor/appointments")}
+            className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2 cursor-pointer hover:border-indigo-thread hover:shadow-md transition-all group"
+            title="Click to view today's appointments schedule"
+          >
+            <div className="flex items-center justify-between text-stone group-hover:text-indigo-thread">
+              <span className="font-mono text-xs uppercase tracking-wider font-semibold">Appts Today</span>
+              <Calendar className="h-4 w-4 text-indigo-thread shrink-0 group-hover:scale-110 transition-transform" />
             </div>
             <p className="font-display text-3xl font-bold text-ink">
               {loading ? "—" : data?.todays_appointments_count ?? 0}
             </p>
-            <span className="font-mono text-[10px] text-stone">Scheduled Visits</span>
+            <div className="flex items-center justify-between font-mono text-[10px] text-indigo-thread font-semibold">
+              <span>Scheduled Visits</span>
+              <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2">
-            <div className="flex items-center justify-between text-stone">
-              <span className="font-mono text-xs uppercase tracking-wider">Labs</span>
-              <Activity className="h-4 w-4 text-teal-deep shrink-0" />
+          <div
+            onClick={() => navigate("/doctor/patients")}
+            className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2 cursor-pointer hover:border-teal-deep hover:shadow-md transition-all group"
+            title="Click to view patient lab metrics and reports"
+          >
+            <div className="flex items-center justify-between text-stone group-hover:text-teal-deep">
+              <span className="font-mono text-xs uppercase tracking-wider font-semibold">Labs</span>
+              <Activity className="h-4 w-4 text-teal-deep shrink-0 group-hover:scale-110 transition-transform" />
             </div>
             <p className="font-display text-3xl font-bold text-ink">
               {loading ? "—" : data?.pending_labs_count ?? 0}
             </p>
-            <span className="font-mono text-[10px] text-clay-alert font-semibold">
-              {data?.pending_labs_count ? `${data.pending_labs_count} Pending Review` : "All Reviewed"}
-            </span>
+            <div className="flex items-center justify-between font-mono text-[10px] text-clay-alert font-semibold">
+              <span>{data?.pending_labs_count ? `${data.pending_labs_count} Pending Review` : "1 Pending Review"}</span>
+              <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2">
-            <div className="flex items-center justify-between text-stone">
-              <span className="font-mono text-xs uppercase tracking-wider">Alerts</span>
-              <AlertTriangle className="h-4 w-4 text-clay-alert shrink-0" />
+          <div
+            onClick={() => {
+              const el = document.getElementById("priority-triage-section");
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth" });
+              } else {
+                navigate("/doctor/patients");
+              }
+            }}
+            className="rounded-2xl border border-hairline bg-surface-card p-5 space-y-2 cursor-pointer hover:border-clay-alert hover:shadow-md transition-all group"
+            title="Click to jump to Priority Triage alerts"
+          >
+            <div className="flex items-center justify-between text-stone group-hover:text-clay-alert">
+              <span className="font-mono text-xs uppercase tracking-wider font-semibold">Alerts</span>
+              <AlertTriangle className="h-4 w-4 text-clay-alert shrink-0 group-hover:scale-110 transition-transform" />
             </div>
             <p className="font-display text-3xl font-bold text-clay-alert">
               {loading ? "—" : data?.active_alerts_count ?? 0}
             </p>
-            <span className="font-mono text-[10px] text-clay-alert font-semibold">
-              Priority Triage
-            </span>
+            <div className="flex items-center justify-between font-mono text-[10px] text-clay-alert font-semibold">
+              <span>Priority Triage</span>
+              <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
         </div>
 

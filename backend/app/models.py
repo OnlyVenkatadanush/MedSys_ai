@@ -77,10 +77,13 @@ class ChatSession(BaseModel):
     createdAt: str
     updatedAt: str
     sourceIds: list[str] = []
+    doctor_id: str | None = None
+    patient_id: str | None = "general"
 
 
 class ChatSessionIn(BaseModel):
     title: str | None = None
+    patient_id: str | None = "general"
 
 
 class ChatSessionSourcesIn(BaseModel):

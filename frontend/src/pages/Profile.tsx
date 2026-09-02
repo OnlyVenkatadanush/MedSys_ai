@@ -444,11 +444,11 @@ export default function Profile() {
                   </h2>
                 </div>
                 <span className="rounded-full bg-bg-mist px-2.5 py-0.5 font-mono text-[11px] text-stone">
-                  {validMedications.length} Prescribed
+                  {(validMedications || []).length} Prescribed
                 </span>
               </div>
 
-              {validMedications.length === 0 ? (
+              {(!validMedications || validMedications.length === 0) ? (
                 <div className="rounded-xl border border-dashed border-hairline py-8 text-center">
                   <p className="text-[13px] text-stone">No active medications on record.</p>
                 </div>

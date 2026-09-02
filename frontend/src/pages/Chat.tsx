@@ -62,7 +62,7 @@ export default function Chat({
   const [sendError, setSendError] = useState<string | null>(null);
   const [openSource, setOpenSource] = useState<ChatSource | null>(null);
   const [assignedPatients, setAssignedPatients] = useState<DoctorPatientAssignment[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<string>("");
+  const [selectedPatient, setSelectedPatient] = useState<string>("general");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
@@ -77,23 +77,15 @@ export default function Chat({
   );
 
   useEffect(() => {
-    // Guards against React StrictMode's dev-only double-invoke of mount
-    // effects: without this, a first-time visitor with zero existing
-    // sessions had refreshSessions() run twice concurrently, each seeing
-    // an empty list and independently creating its own "New chat" —
-    // producing two duplicate empty sessions in the sidebar. The ref
-    // itself survives StrictMode's synthetic unmount/remount, so this
-    // still only runs once per real mount.
     if (initializedRef.current) return;
     initializedRef.current = true;
     listMyData().then(setAllSources).catch((err) => console.error("Failed to load sources", err));
     getModelStatus().then(setModelStatus).catch((err) => console.error("Failed to load model status", err));
-    refreshSessions({ selectFirst: true }).catch((err) => console.error("Failed to load chat sessions", err));
+    refreshSessions(undefined, true).catch((err) => console.error("Failed to load chat sessions", err));
     if (doctorMode) {
       fetchAssignedPatients()
         .then((patients) => {
           setAssignedPatients(patients);
-          if (patients.length > 0) setSelectedPatient(patients[0].patient_id);
         })
         .catch((err) => console.error("Failed to load assigned patients", err));
     }
@@ -111,21 +103,22 @@ export default function Chat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
-  async function refreshSessions(options?: { selectFirst?: boolean }) {
-    const list = await listChatSessions();
+  async function refreshSessions(targetPatientId?: string, selectFirst = false) {
+    const pId = typeof targetPatientId === "string" ? targetPatientId : (selectedPatient || "general");
+    const list = await listChatSessions(pId);
     if (list.length === 0) {
-      const created = await createChatSession();
+      const created = await createChatSession(pId);
       setSessions([created]);
       setActiveSessionId(created.id);
       return;
     }
     setSessions(list);
-    if (options?.selectFirst) setActiveSessionId(list[0].id);
+    if (selectFirst || !activeSessionId) setActiveSessionId(list[0].id);
   }
 
   async function handleNewChat() {
     try {
-      const created = await createChatSession();
+      const created = await createChatSession(selectedPatient || "general");
       setSessions((prev) => [created, ...prev]);
       setActiveSessionId(created.id);
       setMessages([]);
@@ -148,7 +141,7 @@ export default function Chat({
           setActiveSessionId(remaining[0].id);
           setMessages([]);
         } else {
-          createChatSession()
+          createChatSession(selectedPatient || "general")
             .then((created) => {
               setSessions([created]);
               setActiveSessionId(created.id);
@@ -162,11 +155,22 @@ export default function Chat({
   }
 
   async function handleSend(content: string, deepSearch: boolean, images?: string[]) {
-    if (!activeSessionId || isModelSwitching) return;
-    if (doctorMode && !selectedPatient) {
-      setSendError("Assign a patient to your panel before starting a copilot conversation.");
-      return;
+    if (isModelSwitching) return;
+
+    let currentSessionId = activeSessionId;
+    if (!currentSessionId) {
+      try {
+        const created = await createChatSession(selectedPatient || "general");
+        setSessions([created]);
+        setActiveSessionId(created.id);
+        currentSessionId = created.id;
+      } catch (err) {
+        console.error("Failed to auto-create session on send", err);
+        setSendError("Failed to start chat session. Please try again.");
+        return;
+      }
     }
+
     const userMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       role: "user",
@@ -179,22 +183,9 @@ export default function Chat({
     setSendError(null);
 
     try {
-      if (doctorMode) {
-        // Clinical Copilot query
-        const res = await sendDoctorCopilotQuery(selectedPatient, content);
-        const replyMessage: ChatMessage = {
-          id: `ai-${Date.now()}`,
-          role: "assistant",
-          content: res.reply,
-          createdAt: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, replyMessage]);
-      } else {
-        // Patient session chat
-        const reply = await sendSessionMessage(activeSessionId, content, deepSearch, images, activeSpecialty);
-        setMessages((prev) => [...prev, reply]);
-      }
-      await Promise.all([refreshSessions(), listMyData().then(setAllSources)]);
+      const reply = await sendSessionMessage(currentSessionId, content, deepSearch, images, activeSpecialty);
+      setMessages((prev) => [...prev, reply]);
+      await Promise.all([refreshSessions(selectedPatient, false), listMyData().then(setAllSources)]);
     } catch (err) {
       setSendError(describeSendError(err));
     } finally {
@@ -236,27 +227,27 @@ export default function Chat({
 
         {/* Center Main Chat Column */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-[#f4f2eb]">
-          {/* Top Bar with Model Status */}
-          <div className="flex items-center justify-between gap-4 w-full px-6 pt-5 pb-3 border-b border-stone-300/40 shrink-0">
+          {/* Top Bar Header */}
+          <div className="relative z-30 flex items-center justify-between gap-3 w-full px-5 py-3 border-b border-stone-300/60 bg-[#f4f2eb] shrink-0 min-h-[60px]">
             {doctorMode ? (
-              <div className="flex items-center gap-2 text-xs font-mono text-stone-700 shrink-0">
-                <User className="h-3.5 w-3.5 text-stone-800" />
-                <span className="font-semibold uppercase tracking-wider text-stone-600">Patient:</span>
+              <div className="flex items-center gap-2 text-xs font-mono text-stone-700 min-w-0 flex-1">
+                <User className="h-3.5 w-3.5 text-stone-800 shrink-0" />
+                <span className="font-semibold uppercase tracking-wider text-stone-600 shrink-0 text-[11px]">Context:</span>
                 <select
                   value={selectedPatient}
-                  onChange={(e) => setSelectedPatient(e.target.value)}
-                  disabled={assignedPatients.length === 0}
-                  className="rounded-xl border border-stone-300/80 bg-white px-3 py-1 font-mono text-xs font-semibold text-stone-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-stone-800 disabled:opacity-50"
+                  onChange={(e) => {
+                    const newPId = e.target.value;
+                    setSelectedPatient(newPId);
+                    refreshSessions(newPId, true);
+                  }}
+                  className="rounded-xl border border-stone-300/80 bg-white px-3 py-1.5 font-mono text-xs font-semibold text-stone-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-stone-800 cursor-pointer"
                 >
-                  {assignedPatients.length === 0 ? (
-                    <option value="">No patients assigned</option>
-                  ) : (
-                    assignedPatients.map((p) => (
-                      <option key={p.patient_id} value={p.patient_id}>
-                        {p.patient_name} ({p.patient_id})
-                      </option>
-                    ))
-                  )}
+                  <option value="general">🌐 General Doctor Assistant</option>
+                  {assignedPatients.map((p) => (
+                    <option key={p.patient_id} value={p.patient_id}>
+                      👤 {p.patient_name} ({p.patient_id})
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : (
@@ -283,13 +274,41 @@ export default function Chat({
               animate="show"
             >
               {messages.length === 0 && !sending && (
-                <div className="py-24 text-center">
-                  <p className="font-display text-2xl text-stone-400 font-normal mb-2">
-                    How can I assist your health today?
-                  </p>
-                  <p className="text-xs font-mono text-stone-500">
-                    Ask about symptoms, vitals, drug interactions, or upload medical reports.
-                  </p>
+                <div className="py-12 text-center space-y-6">
+                  <div className="space-y-2">
+                    <h2 className="font-display text-3xl font-semibold text-ink">
+                      How can I assist your clinical practice today?
+                    </h2>
+                    <p className="text-xs font-mono text-stone max-w-lg mx-auto leading-relaxed">
+                      {selectedPatient === "general" || !selectedPatient
+                        ? "🌐 General Medical Assistant Mode — Ask medical research, drug dosing, or clinical guideline queries."
+                        : `🔒 Locked into Patient ${selectedPatient} Context — Ask about lab trends, drug interactions, or discharge notes.`}
+                    </p>
+                  </div>
+
+                  {/* Quick Clinical Action Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left">
+                    {[
+                      { icon: "💊", title: "Drug Interaction Safety Check", text: "Check potential drug-drug interactions with active prescriptions." },
+                      { icon: "🩺", title: "Lab Intelligence & Trends", text: "Summarize recent lab metrics and highlight abnormal lab values." },
+                      { icon: "📋", title: "Draft Patient Discharge Note", text: "Convert clinical notes into plain English instructions for patient portal." },
+                      { icon: "🧪", title: "Clinical Guidelines Lookup", text: "Review evidence-based screening guidelines for this age/condition." },
+                    ].map((chip, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(chip.title, false)}
+                        className="rounded-2xl border border-hairline bg-surface-card p-4 hover:border-teal-deep hover:bg-teal-deep/5 transition-all text-left group shadow-xs space-y-1"
+                      >
+                        <div className="flex items-center gap-2 font-display text-xs font-semibold text-ink group-hover:text-teal-deep">
+                          <span>{chip.icon}</span>
+                          <span>{chip.title}</span>
+                        </div>
+                        <p className="font-sans text-[11px] text-stone leading-relaxed">
+                          {chip.text}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

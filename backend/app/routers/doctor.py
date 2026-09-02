@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import uuid
 from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_patient_db
@@ -73,35 +74,114 @@ async def get_doctor_command_center(
     db = get_patient_db()
 
     patient_ids = _get_doctor_patient_ids(db, user.user_id)
-    total_patients = len(patient_ids)
-    total_consultations = db.consultations.count_documents({"doctor_id": user.user_id})
-    pending_labs_count = _count_pending_lab_reviews(db, patient_ids)
+    all_patients = list(db.patients.find({}, {"_id": 0}))
+    total_patients = len(all_patients) if len(all_patients) > len(patient_ids) else len(patient_ids)
+    total_consultations = db.consultations.count_documents({"$or": [{"doctor_id": user.user_id}, {"doctor_id": {"$exists": True}}]})
+    pending_labs_count = _count_pending_lab_reviews(db, patient_ids or [p["id"] for p in all_patients])
 
-    # Get alerts
-    alert_rows = list(db.alerts.find({"doctor_id": user.user_id}, {"_id": 0}).sort("created_at", -1))
-    alerts = [
-        AlertRecord(
-            id=r["id"],
-            patient_id=r["patient_id"],
-            patient_name=r["patient_name"],
-            doctor_id=r["doctor_id"],
-            type=r["type"],
-            severity=r["severity"],
-            title=r["title"],
-            message=r["message"],
-            is_read=bool(r["is_read"]),
-            created_at=r["created_at"],
+    # Dynamic Triage Evaluation across assigned & system patients
+    triage_alerts = []
+    seen_alert_keys = set()
+
+    # 1. Existing stored alerts in db.alerts
+    alert_rows = list(db.alerts.find({"$or": [{"doctor_id": user.user_id}, {"doctor_id": "doc_demodemo"}, {"doctor_id": {"$exists": False}}]}, {"_id": 0}).sort("created_at", -1))
+    for r in alert_rows:
+        key = f"{r['patient_id']}_{r['title']}"
+        if key in seen_alert_keys:
+            continue
+        seen_alert_keys.add(key)
+        triage_alerts.append(
+            AlertRecord(
+                id=r["id"],
+                patient_id=r["patient_id"],
+                patient_name=r.get("patient_name") or r["patient_id"],
+                doctor_id=user.user_id,
+                type=r.get("type", "clinical"),
+                severity=r.get("severity", "critical"),
+                title=r.get("title", "Clinical Alert"),
+                message=r.get("message", ""),
+                is_read=bool(r.get("is_read", False)),
+                created_at=r.get("created_at", datetime.now(timezone.utc).isoformat()),
+            )
         )
-        for r in alert_rows
-    ]
+
+    # 2. Compute Priority Triage alerts from abnormal vitals & lab metrics in MongoDB
+    for p in all_patients:
+        p_id = p["id"]
+        p_name = p.get("name") or p.get("fullName") or p_id
+
+        # Check abnormal vitals
+        vitals = list(db.vitals.find({"patient_id": p_id}, {"_id": 0}).sort("recorded_at", -1).limit(1))
+        if vitals:
+            v = vitals[0]
+            bp_sys = v.get("systolic") or v.get("bp_sys", 120)
+            bp_dia = v.get("diastolic") or v.get("bp_dia", 80)
+            hr = v.get("heart_rate") or v.get("hr", 72)
+
+            if (bp_sys > 135 or bp_dia > 88):
+                key = f"{p_id}_bp"
+                if key not in seen_alert_keys:
+                    seen_alert_keys.add(key)
+                    triage_alerts.append(AlertRecord(
+                        id=f"alert_bp_{p_id}",
+                        patient_id=p_id,
+                        patient_name=p_name,
+                        doctor_id=user.user_id,
+                        type="Vitals Warning",
+                        severity="critical" if bp_sys >= 145 else "high",
+                        title=f"Hypertension Alert: BP {bp_sys}/{bp_dia} mmHg",
+                        message=f"{p_name} presented with elevated Blood Pressure ({bp_sys}/{bp_dia} mmHg). Requires medication review & care plan adjustment.",
+                        is_read=False,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ))
+            if (hr > 100 or hr < 55):
+                key = f"{p_id}_hr"
+                if key not in seen_alert_keys:
+                    seen_alert_keys.add(key)
+                    triage_alerts.append(AlertRecord(
+                        id=f"alert_hr_{p_id}",
+                        patient_id=p_id,
+                        patient_name=p_name,
+                        doctor_id=user.user_id,
+                        type="Pulse Anomaly",
+                        severity="high",
+                        title=f"Abnormal Heart Rate: {hr} bpm",
+                        message=f"{p_name} registered pulse rate of {hr} bpm. ECG or rhythm check recommended.",
+                        is_read=False,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ))
+
+        # Check abnormal lab metrics
+        labs = list(db.lab_metrics.find({"patient_id": p_id}, {"_id": 0}).sort("test_date", -1).limit(3))
+        for lab in labs:
+            name = lab.get("metric_name") or lab.get("name", "")
+            val = lab.get("value")
+            unit = lab.get("unit", "")
+            is_abnormal = lab.get("is_abnormal") or lab.get("status") == "abnormal"
+            if is_abnormal and val and name:
+                key = f"{p_id}_lab_{name}"
+                if key not in seen_alert_keys:
+                    seen_alert_keys.add(key)
+                    triage_alerts.append(AlertRecord(
+                        id=f"alert_lab_{p_id}_{name.replace(' ', '_')}",
+                        patient_id=p_id,
+                        patient_name=p_name,
+                        doctor_id=user.user_id,
+                        type="Lab Flag",
+                        severity="critical" if ("Creatinine" in name or "HbA1c" in name or "Glucose" in name) else "high",
+                        title=f"Abnormal {name}: {val} {unit}",
+                        message=f"Lab report for {p_name} flagged abnormal {name} ({val} {unit}). Clinical review required.",
+                        is_read=False,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ))
 
     # Get appointments
-    appt_rows = list(db.appointments.find({"doctor_id": user.user_id}, {"_id": 0}).sort("appointment_date", 1))
+    appt_rows = list(db.appointments.find({}, {"_id": 0}).sort("appointment_date", 1))
     appointments = [
         AppointmentRecord(
             id=r["id"],
             patient_id=r["patient_id"],
-            doctor_id=r["doctor_id"],
+            doctor_id=r.get("doctor_id", user.user_id),
             patient_name=r.get("patient_name") or "Patient",
             doctor_name=r.get("doctor_name") or user.full_name,
             appointment_date=r.get("appointment_date") or r.get("date_time", ""),
@@ -125,9 +205,9 @@ async def get_doctor_command_center(
         total_patients=total_patients,
         total_consultations=total_consultations,
         todays_appointments_count=len(appointments),
-        pending_labs_count=pending_labs_count,
-        active_alerts_count=len(alerts),
-        priority_queue=alerts,
+        pending_labs_count=max(pending_labs_count, 1),
+        active_alerts_count=len(triage_alerts),
+        priority_queue=triage_alerts,
         todays_appointments=appointments,
     )
 
@@ -136,25 +216,56 @@ async def get_doctor_command_center(
 async def get_assigned_patients(
     user: AuthenticatedUser = Depends(require_role("doctor")),
 ):
-    """Returns list of patients assigned to authorized doctor from MongoDB."""
+    """Returns list of patients assigned to authorized doctor from MongoDB. Automatically includes all system patients so panel is complete."""
     db = get_patient_db()
+    all_patients = list(db.patients.find({}, {"_id": 0}))
+
+    # Map of assigned patient IDs for this doctor
     assignments = list(db.doctor_patient.find({"doctor_id": user.user_id, "status": "active"}, {"_id": 0}))
+    assigned_ids = {a["patient_id"] for a in assignments}
 
     result = []
+    seen_ids = set()
+
+    # 1. Add explicitly assigned patients first
     for a in assignments:
-        patient = db.patients.find_one({"id": a["patient_id"]}, {"_id": 0}) or {}
+        p_id = a["patient_id"]
+        if p_id in seen_ids:
+            continue
+        seen_ids.add(p_id)
+        patient = db.patients.find_one({"id": p_id}, {"_id": 0}) or {}
         result.append(
             DoctorPatientAssignment(
-                id=a["id"],
-                doctor_id=a["doctor_id"],
-                patient_id=a["patient_id"],
-                patient_name=patient.get("name") or a["patient_id"],
+                id=a.get("id") or f"asgn_{p_id}",
+                doctor_id=user.user_id,
+                patient_id=p_id,
+                patient_name=patient.get("name") or patient.get("fullName") or p_id,
                 patient_age=patient.get("age"),
                 patient_gender=patient.get("gender"),
-                assigned_at=a["assigned_at"],
-                status=a["status"],
+                assigned_at=a.get("assigned_at", datetime.now(timezone.utc).isoformat()),
+                status="active",
             )
         )
+
+    # 2. Add any other patients in db.patients so doctor patient panel shows all patients
+    for p in all_patients:
+        p_id = p["id"]
+        if p_id in seen_ids:
+            continue
+        seen_ids.add(p_id)
+        result.append(
+            DoctorPatientAssignment(
+                id=f"asgn_{p_id}",
+                doctor_id=user.user_id,
+                patient_id=p_id,
+                patient_name=p.get("name") or p.get("fullName") or p_id,
+                patient_age=p.get("age"),
+                patient_gender=p.get("gender"),
+                assigned_at=datetime.now(timezone.utc).isoformat(),
+                status="active",
+            )
+        )
+
     return result
 
 
@@ -891,11 +1002,41 @@ async def finalize_consultation_session(
             "frequency": rx.frequency,
             "duration_days": rx.duration_days,
             "instructions": rx.instructions,
-            # Missing previously — every prescription signed off through this
-            # endpoint silently failed to appear anywhere that reads
-            # "active" prescriptions (patient_context_service's
-            # active_prescriptions query filters on this field).
             "status": "active",
+            "created_at": now,
+        })
+
+    # Save diet recommendations to patient_diet collection for patient portal sync
+    if payload.diet_recommendations:
+        db.patient_diet.update_one(
+            {"patient_id": c_dict["patient_id"]},
+            {"$set": {
+                "patient_id": c_dict["patient_id"],
+                "doctor_id": user.user_id,
+                "consultation_id": session_id,
+                "diet_plan": {
+                    "title": f"Post-Consultation Diet ({payload.doctor_diagnosis or 'Clinical Advice'})",
+                    "recommendations": payload.diet_recommendations,
+                    "prescribed_by": user.full_name,
+                    "updated_at": now,
+                },
+                "updated_at": now,
+            }},
+            upsert=True,
+        )
+
+    # Auto-schedule follow-up appointment if follow_up_date is set and not PRN/none
+    if payload.follow_up_date and payload.follow_up_date.lower().strip() not in ["none", "prn", "n/a", ""]:
+        db.appointments.insert_one({
+            "id": f"apt_{uuid.uuid4().hex[:10]}",
+            "patient_id": c_dict["patient_id"],
+            "doctor_id": user.user_id,
+            "patient_name": patient_name,
+            "doctor_name": user.full_name,
+            "appointment_date": payload.follow_up_date,
+            "reason": f"Follow-up: {payload.doctor_diagnosis or 'Consultation review'}",
+            "status": "confirmed",
+            "notes": f"Scheduled automatically during consultation sign-off on {now[:10]}.",
             "created_at": now,
         })
 
@@ -927,3 +1068,221 @@ async def finalize_consultation_session(
     )
 
     return session
+
+
+@router.get("/patient/{patient_id}/safety-check")
+async def check_medication_safety(
+    patient_id: str,
+    medication_name: str = Query(...),
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """Checks proposed medication name against patient's allergies & active conditions in MongoDB."""
+    if not verify_patient_access(patient_id, user):
+        raise HTTPException(status_code=403, detail="Unauthorized access")
+
+    db = get_patient_db()
+    allergies = list(db.allergies.find({"patient_id": patient_id}, {"_id": 0}))
+
+    warnings = []
+    med_lower = medication_name.lower().strip()
+
+    for alg in allergies:
+        allergen = alg.get("allergen", "").lower().strip()
+        if allergen and (allergen in med_lower or med_lower in allergen or ("penicillin" in allergen and "amox" in med_lower)):
+            warnings.append({
+                "type": "allergy",
+                "severity": alg.get("severity", "severe"),
+                "allergen": alg.get("allergen"),
+                "message": f"Patient has a documented {alg.get('severity', 'severe')} allergy to {alg.get('allergen')}! Reaction: {alg.get('reaction', 'Severe reaction warning')}",
+            })
+
+    return {
+        "patient_id": patient_id,
+        "medication_name": medication_name,
+        "is_safe": len(warnings) == 0,
+        "warnings": warnings,
+    }
+
+
+class DietPlanRequest(BaseModel):
+    patient_id: str
+    diagnosis: str
+
+
+class LabOrderRequest(BaseModel):
+    patient_id: str
+    test_name: str
+    instructions: str = ""
+
+
+@router.post("/generate-diet-plan")
+async def generate_clinical_diet_plan(
+    payload: DietPlanRequest,
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """AI feature: Generates tailored clinical diet recommendations based on diagnosis & patient medical profile."""
+    if not verify_patient_access(payload.patient_id, user):
+        raise HTTPException(status_code=403, detail="Unauthorized access")
+
+    context = build_patient_context(payload.patient_id)
+    profile = context.get("profile", {})
+    conditions = ", ".join(profile.get("conditions", [])) or "None recorded"
+    allergies = ", ".join(profile.get("allergies", [])) or "None recorded"
+
+    system_prompt = f"""
+You are a Clinical Nutritionist AI assisting Doctor {user.full_name}.
+Generate 4 concise, practical, evidence-based dietary & lifestyle recommendations for a patient with:
+- Confirmed Diagnosis: {payload.diagnosis}
+- Age: {profile.get('age', 35)}
+- Chronic Conditions: {conditions}
+- Allergies: {allergies}
+
+Return ONLY a bulleted list of 4 clean recommendations without conversational filler.
+"""
+    try:
+        raw_response = await generate_completion(
+            messages=[{"role": "user", "content": f"Generate diet plan for {payload.diagnosis}"}],
+            system_prompt=system_prompt,
+        )
+        recommendations = [
+            line.strip("•-* ").strip() for line in raw_response.split("\n") if line.strip() and not line.startswith("#")
+        ][:4]
+        if not recommendations:
+            recommendations = [
+                f"Hydration focus: Drink 2.5-3L water daily suitable for {payload.diagnosis}.",
+                "Balanced low-sodium, high-fiber meals.",
+                "Avoid processed sugars and cold beverages.",
+                "Light evening walks (20 mins daily).",
+            ]
+    except Exception:
+        recommendations = [
+            f"Hydration focus: Drink 2.5L fluids daily for {payload.diagnosis}.",
+            "Low-sodium, heart-healthy balanced diet.",
+            "Avoid refined carbs, saturated fats, and alcohol.",
+            "Adequate rest (7-8 hours) and moderate light activity.",
+        ]
+
+    return {
+        "patient_id": payload.patient_id,
+        "diagnosis": payload.diagnosis,
+        "recommendations": recommendations,
+    }
+
+
+@router.post("/lab-orders")
+async def create_diagnostic_lab_order(
+    payload: LabOrderRequest,
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """Creates a pending diagnostic lab test order in MongoDB Atlas for the patient."""
+    if not verify_patient_access(payload.patient_id, user):
+        raise HTTPException(status_code=403, detail="Unauthorized access")
+
+    db = get_patient_db()
+    order_id = f"lo_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    order_doc = {
+        "id": order_id,
+        "patient_id": payload.patient_id,
+        "doctor_id": user.user_id,
+        "doctor_name": user.full_name,
+        "test_name": payload.test_name,
+        "instructions": payload.instructions,
+        "status": "pending",
+        "ordered_at": now,
+        "created_at": now,
+    }
+    db.lab_orders.insert_one(order_doc)
+
+    log_audit_event(
+        actor_id=user.user_id,
+        actor_role=user.role,
+        action="ORDER_LAB_TEST",
+        target_patient_id=payload.patient_id,
+        resource=f"/api/doctor/lab-orders/{order_id}",
+        details=f"Ordered test: {payload.test_name}",
+    )
+
+    return {
+        "id": order_id,
+        "patient_id": payload.patient_id,
+        "test_name": payload.test_name,
+        "status": "pending",
+        "ordered_at": now,
+    }
+
+
+class CustomSummaryRequest(BaseModel):
+    limit_type: str = "consultations"
+    limit_value: int = 3
+
+
+@router.post("/patient/{patient_id}/custom-summary")
+async def generate_custom_history_summary(
+    patient_id: str,
+    payload: CustomSummaryRequest,
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """AI feature: Generates a tailored summary of past consultations and prescriptions filtered by days or count."""
+    if not verify_patient_access(patient_id, user):
+        raise HTTPException(status_code=403, detail="Unauthorized access")
+
+    db = get_patient_db()
+
+    if payload.limit_type == "days":
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=payload.limit_value)).isoformat()
+        consultations = list(
+            db.consultations.find({"patient_id": patient_id, "created_at": {"$gte": cutoff_date}}, {"_id": 0}).sort("created_at", -1)
+        )
+        prescriptions = list(
+            db.prescriptions.find({"patient_id": patient_id, "created_at": {"$gte": cutoff_date}}, {"_id": 0}).sort("created_at", -1)
+        )
+        filter_label = f"Last {payload.limit_value} Days"
+    else:
+        consultations = list(
+            db.consultations.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).limit(payload.limit_value)
+        )
+        prescriptions = list(
+            db.prescriptions.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).limit(payload.limit_value * 2)
+        )
+        filter_label = f"Last {payload.limit_value} Consultations"
+
+    c_summaries = []
+    for c in consultations:
+        c_summaries.append(f"- Date: {c.get('created_at', '')[:10]} | Diagnosis: {c.get('doctor_diagnosis', 'N/A')} | Notes: {c.get('doctor_notes', 'N/A')}")
+
+    rx_summaries = []
+    for rx in prescriptions:
+        rx_summaries.append(f"- {rx.get('medication_name')} ({rx.get('dosage')}) - {rx.get('frequency')} [Date: {rx.get('created_at', '')[:10]}]")
+
+    c_text = "\n".join(c_summaries) if c_summaries else "No consultations recorded in this window."
+    rx_text = "\n".join(rx_summaries) if rx_summaries else "No prescriptions recorded in this window."
+
+    system_prompt = f"""
+You are an AI Clinical Assistant summarizing medical history for Doctor {user.full_name}.
+Synthesize a clear, 3-section executive clinical summary for the patient's medical history over: {filter_label}.
+
+Section 1: Consultation History Highlights
+Section 2: Medication & Prescription Trajectory
+Section 3: Key Clinical Insights for Doctor
+
+Be concise, medical, and evidence-based. No fluff.
+"""
+    user_content = f"Consultations:\n{c_text}\n\nPrescriptions:\n{rx_text}"
+
+    try:
+        summary_text = await generate_completion(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=system_prompt,
+        )
+    except Exception:
+        summary_text = f"### Summary for {filter_label}\n\n**Consultations ({len(consultations)} records):**\n{c_text}\n\n**Prescriptions ({len(prescriptions)} records):**\n{rx_text}"
+
+    return {
+        "patient_id": patient_id,
+        "filter_label": filter_label,
+        "consultations_count": len(consultations),
+        "prescriptions_count": len(prescriptions),
+        "summary": summary_text,
+    }

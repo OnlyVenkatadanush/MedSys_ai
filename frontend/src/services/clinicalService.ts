@@ -41,6 +41,68 @@ export async function parseVoiceNotes(rawSpeechText: string): Promise<Structured
   });
 }
 
+export async function checkMedicationSafety(
+  patientId: string,
+  medicationName: string
+): Promise<{
+  patient_id: string;
+  medication_name: string;
+  is_safe: boolean;
+  warnings: Array<{ type: string; severity: string; allergen: string; message: string }>;
+}> {
+  return apiFetch(
+    `/api/doctor/patient/${patientId}/safety-check?medication_name=${encodeURIComponent(medicationName)}`
+  );
+}
+
+export async function generateAIDietPlan(
+  patientId: string,
+  diagnosis: string
+): Promise<{
+  patient_id: string;
+  diagnosis: string;
+  recommendations: string[];
+}> {
+  return apiFetch("/api/doctor/generate-diet-plan", {
+    method: "POST",
+    body: JSON.stringify({ patient_id: patientId, diagnosis }),
+  });
+}
+
+export async function orderLabTest(
+  patientId: string,
+  testName: string,
+  instructions = ""
+): Promise<{
+  id: string;
+  patient_id: string;
+  test_name: string;
+  status: string;
+  ordered_at: string;
+}> {
+  return apiFetch("/api/doctor/lab-orders", {
+    method: "POST",
+    body: JSON.stringify({ patient_id: patientId, test_name: testName, instructions }),
+  });
+}
+
+export async function fetchCustomHistorySummary(
+  patientId: string,
+  limitType: "consultations" | "days",
+  limitValue: number
+): Promise<{
+  patient_id: string;
+  filter_label: string;
+  consultations_count: number;
+  prescriptions_count: number;
+  summary: string;
+}> {
+  return apiFetch(`/api/doctor/patient/${patientId}/custom-summary`, {
+    method: "POST",
+    body: JSON.stringify({ limit_type: limitType, limit_value: limitValue }),
+  });
+}
+
 export async function fetchDoctorAnalytics(): Promise<DoctorAnalytics> {
   return apiFetch<DoctorAnalytics>("/api/doctor/analytics");
 }

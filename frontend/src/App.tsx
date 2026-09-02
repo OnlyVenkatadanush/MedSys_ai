@@ -17,6 +17,7 @@ import { DoctorCommandCenter } from "@/pages/doctor/DoctorCommandCenter";
 import { MyPatients } from "@/pages/doctor/MyPatients";
 import { AddPatientWizard } from "@/pages/doctor/AddPatientWizard";
 import { PatientWorkspace } from "@/pages/doctor/PatientWorkspace";
+import { ActiveConsultationSuite } from "@/pages/doctor/ActiveConsultationSuite";
 import { ClinicalCopilot } from "@/pages/doctor/ClinicalCopilot";
 import { DoctorAnalyticsPage } from "@/pages/doctor/DoctorAnalytics";
 import { DoctorAppointmentsPage } from "@/pages/doctor/DoctorAppointments";
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/doctor/patients" element={<MyPatients />} />
           <Route path="/doctor/add-patient" element={<AddPatientWizard />} />
           <Route path="/doctor/patient/:id" element={<PatientWorkspace />} />
+          <Route path="/doctor/patient/:id/consult" element={<ActiveConsultationSuite />} />
           <Route path="/doctor/copilot" element={<ClinicalCopilot />} />
           <Route path="/doctor/analytics" element={<DoctorAnalyticsPage />} />
           <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />

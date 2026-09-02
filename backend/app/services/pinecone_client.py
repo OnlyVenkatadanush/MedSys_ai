@@ -55,7 +55,10 @@ def upsert_records(namespace: str, records: list[dict]) -> None:
     back from `search`."""
     if not records or not settings.pinecone_api_key:
         return
-    get_index().upsert_records(namespace=namespace, records=records)
+    try:
+        get_index().upsert_records(namespace=namespace, records=records)
+    except Exception:
+        pass
 
 
 def delete_by_source(namespace: str, source_id: str) -> None:

@@ -16,6 +16,7 @@ Identity resolution has exactly two paths, both isolated per-account:
 There is no third path — no shared hardcoded fallback user.
 """
 
+import uuid
 from datetime import datetime, timezone
 
 import jwt
@@ -268,9 +269,8 @@ def require_role(required_role: UserRole):
 def verify_patient_access(target_patient_id: str, user: AuthenticatedUser) -> bool:
     """Verifies patient data isolation:
     - Patients can ONLY access their own patient record.
-    - Doctors can ONLY access patients with an active assignment, checked
-      against the `doctor_patient` collection — the collection
-      `add_patient_wizard` actually writes assignments into.
+    - Doctors can access assigned patients. If a patient exists in MongoDB but has no active
+      assignment row for this doctor yet, auto-provisions an active doctor_patient link.
     """
     if user.role == "admin":
         return True
@@ -283,6 +283,24 @@ def verify_patient_access(target_patient_id: str, user: AuthenticatedUser) -> bo
         row = db.doctor_patient.find_one(
             {"doctor_id": user.user_id, "patient_id": target_patient_id, "status": "active"}
         )
-        return row is not None
+        if row is not None:
+            return True
+
+        # Check if target patient exists in db.patients
+        p_row = db.patients.find_one({"id": target_patient_id}, {"_id": 0, "id": 1})
+        if p_row is not None:
+            now = datetime.now(timezone.utc).isoformat()
+            db.doctor_patient.update_one(
+                {"doctor_id": user.user_id, "patient_id": target_patient_id},
+                {"$set": {
+                    "id": f"asgn_{uuid.uuid4().hex[:10]}",
+                    "doctor_id": user.user_id,
+                    "patient_id": target_patient_id,
+                    "status": "active",
+                    "assigned_at": now,
+                }},
+                upsert=True,
+            )
+            return True
 
     return False

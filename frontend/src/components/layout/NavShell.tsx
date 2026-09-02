@@ -16,6 +16,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { getActiveRoleOverride, setActiveRoleOverride, setDemoAuthenticated } from "@/services/client";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 interface NavItem {
   to: string;
@@ -175,7 +176,9 @@ export function NavShell() {
             </div>
           </header>
 
-          <Outlet />
+          <ErrorBoundary fallbackTitle="View Navigation Error">
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
 

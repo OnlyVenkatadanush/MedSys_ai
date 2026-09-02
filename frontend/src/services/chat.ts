@@ -22,22 +22,23 @@ export async function getSourceContent(source: ChatSource): Promise<ChatSourceDe
   return apiFetch<ChatSourceDetail>(`/chat/sources/${encodeURIComponent(source.id)}/content`);
 }
 
-export async function listChatSessions(): Promise<ChatSession[]> {
+export async function listChatSessions(patientId?: string): Promise<ChatSession[]> {
   if (isMockMode) return mockDelay(mockChatSessions);
-  return apiFetch<ChatSession[]>("/chat/sessions");
+  const url = patientId ? `/chat/sessions?patient_id=${encodeURIComponent(patientId)}` : "/chat/sessions";
+  return apiFetch<ChatSession[]>(url);
 }
 
-export async function createChatSession(): Promise<ChatSession> {
+export async function createChatSession(patientId = "general", title = "New chat"): Promise<ChatSession> {
   if (isMockMode) {
     const now = new Date().toISOString();
     return mockDelay(
-      { id: `local-${Date.now()}`, title: "New chat", createdAt: now, updatedAt: now, sourceIds: [] },
+      { id: `local-${Date.now()}`, title, createdAt: now, updatedAt: now, sourceIds: [] },
       250,
     );
   }
   return apiFetch<ChatSession>("/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ patient_id: patientId, title }),
   });
 }
 

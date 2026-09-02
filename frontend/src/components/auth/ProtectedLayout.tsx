@@ -18,7 +18,7 @@ interface RoleMismatch {
   email: string;
 }
 
-const DOCTOR_HOME = "/doctor/patients";
+const DOCTOR_HOME = "/doctor/dashboard";
 const PATIENT_HOME = "/home";
 
 // Routes in App.tsx that only make sense for one role, despite some (Home,

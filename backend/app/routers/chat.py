@@ -1,8 +1,9 @@
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.config import settings
 from app.db import get_patient_db
@@ -88,9 +89,17 @@ async def _refine_chat_title(db, session_id: str, user_message: str, assistant_r
 
 
 @router.get("/sessions", response_model=list[ChatSession])
-def list_sessions(user_id: str = Depends(require_clerk_auth)) -> list[dict]:
+def list_sessions(
+    patient_id: Optional[str] = Query(None),
+    user_id: str = Depends(require_clerk_auth),
+) -> list[dict]:
     db = get_patient_db()
-    sessions = list(db.chat_sessions.find({"$or": [{"clerkUserId": user_id}, {"clerkUserId": {"$exists": False}}]}, {"_id": 0, "clerkUserId": 0}).sort("updatedAt", -1))
+    query: dict = {"$or": [{"clerkUserId": user_id}, {"doctor_id": user_id}, {"clerkUserId": {"$exists": False}}]}
+    if patient_id:
+        query["patient_id"] = patient_id
+    sessions = list(
+        db.chat_sessions.find(query, {"_id": 0, "clerkUserId": 0}).sort("updatedAt", -1)
+    )
     return sessions
 
 
@@ -100,6 +109,8 @@ def create_session(body: ChatSessionIn, user_id: str = Depends(require_clerk_aut
     session = {
         "id": _new_id("sess"),
         "clerkUserId": user_id,
+        "doctor_id": user_id,
+        "patient_id": getattr(body, "patient_id", None) or "general",
         "title": body.title or "New chat",
         "createdAt": _now(),
         "updatedAt": _now(),

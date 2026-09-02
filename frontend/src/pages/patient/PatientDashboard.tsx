@@ -87,7 +87,7 @@ export const PatientDashboard: React.FC = () => {
                 </span>
               </div>
 
-              {dashboard?.recent_doctor_advice?.length > 0 ? (
+              {Array.isArray(dashboard?.recent_doctor_advice) && dashboard.recent_doctor_advice.length > 0 ? (
                 dashboard.recent_doctor_advice.map((advice: ConsultationSession) => (
                   <div key={advice.id} className="rounded-xl border border-hairline bg-bg-mist/60 p-5 space-y-4">
                     <div className="flex items-center justify-between">
