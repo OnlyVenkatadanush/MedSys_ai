@@ -55,13 +55,20 @@ def images_from_upload(filename: str, raw: bytes) -> list[str]:
 
 
 def extract_text_from_file(raw: bytes, filename: str) -> str:
-    """Extracts text or returns summary string from uploaded PDF/image file."""
-    if filename.lower().endswith(".pdf"):
+    """Extracts text or returns summary string from uploaded PDF/text/image file."""
+    lower = filename.lower()
+    if lower.endswith((".txt", ".md", ".csv", ".json", ".log")):
+        return raw.decode("utf-8", errors="ignore").strip()
+
+    if lower.endswith(".pdf"):
         if pymupdf is not None:
-            doc = pymupdf.open(stream=raw, filetype="pdf")
-            text = "\n".join(page.get_text() for page in doc)
-            if text.strip():
-                return text.strip()
+            try:
+                doc = pymupdf.open(stream=raw, filetype="pdf")
+                text = "\n".join(page.get_text() for page in doc)
+                if text.strip():
+                    return text.strip()
+            except Exception:
+                pass
         return f"PDF Document ({filename}) uploaded. Text content extracted."
     
     return f"Image Document ({filename}) uploaded. Visual content processed."

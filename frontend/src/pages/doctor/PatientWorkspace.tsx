@@ -13,6 +13,7 @@ import {
   fetchEvidenceTrace,
   sendDoctorCopilotQuery,
   fetchCustomHistorySummary,
+  downloadDoctorConsultationPdf,
 } from "@/services/clinicalService";
 import type {
   EvidenceTrace,
@@ -40,6 +41,7 @@ import {
   X,
   ShieldCheck,
   Zap,
+  Download,
 } from "lucide-react";
 
 export const PatientWorkspace: React.FC = () => {
@@ -189,7 +191,7 @@ export const PatientWorkspace: React.FC = () => {
 
       <div className="px-5 sm:px-8 space-y-6">
         {/* WHAT'S NEW DELTA BANNER */}
-        {whatsNew && Array.isArray(whatsNew.relevant_changes) && whatsNew.relevant_changes.length > 0 && (
+        {whatsNew && ((whatsNew.events_since_last_visit && whatsNew.events_since_last_visit.length > 0) || (whatsNew.relevant_changes && whatsNew.relevant_changes.length > 0)) && (
           <div className="rounded-2xl border border-teal-deep/30 bg-teal-deep/5 p-4 shadow-xs flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <Sparkles className="h-5 w-5 text-teal-deep shrink-0" />
@@ -198,7 +200,7 @@ export const PatientWorkspace: React.FC = () => {
                   ⚡ WHAT'S NEW SINCE LAST VISIT
                 </span>
                 <p className="text-xs text-ink font-medium">
-                  {(whatsNew.relevant_changes || []).join(" • ")}
+                  {(whatsNew.events_since_last_visit || whatsNew.relevant_changes || []).join(" • ")}
                 </p>
               </div>
             </div>
@@ -382,9 +384,25 @@ export const PatientWorkspace: React.FC = () => {
                   {c.doctor_diagnosis && (
                     <p className="font-display text-base font-semibold text-ink">Diagnosis: {c.doctor_diagnosis}</p>
                   )}
-                  {c.doctor_notes && (
-                    <p className="text-xs text-stone leading-relaxed">{c.doctor_notes}</p>
-                  )}
+                  <div className="flex items-center justify-between border-t border-hairline/60 pt-2.5">
+                    <span className="font-mono text-[11px] text-stone">Session ID: {c.id || "N/A"}</span>
+                    {c.id && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await downloadDoctorConsultationPdf(c.id, `Prescription_${c.id}.pdf`);
+                          } catch (err) {
+                            console.error("Failed to download PDF", err);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-teal-deep/30 bg-teal-deep/10 px-3 py-1 text-xs font-mono font-bold text-teal-deep hover:bg-teal-deep hover:text-white transition-all shadow-2xs"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>📄 Download Rx PDF</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -446,17 +464,37 @@ export const PatientWorkspace: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <p><span className="font-semibold">Insight ID:</span> {evidenceTrace.insight_id}</p>
-              <p><span className="font-semibold">Reasoning:</span> {evidenceTrace.reasoning}</p>
-              <div>
-                <span className="font-semibold block mb-1">Supporting Sources:</span>
-                <div className="space-y-1">
-                  {evidenceTrace.sources.map((s, idx) => (
-                    <div key={idx} className="rounded-lg bg-bg-mist p-2 font-mono text-[11px]">
-                      {s.title} ({s.document_date})
-                    </div>
-                  ))}
+              {evidenceTrace.title && <p><span className="font-semibold">Title:</span> {evidenceTrace.title}</p>}
+              {evidenceTrace.reasoning && <p><span className="font-semibold">Reasoning:</span> {evidenceTrace.reasoning}</p>}
+              {evidenceTrace.relevant_changes && evidenceTrace.relevant_changes.length > 0 && (
+                <div>
+                  <span className="font-semibold block mb-1">Key Observations:</span>
+                  <div className="space-y-1">
+                    {evidenceTrace.relevant_changes.map((c, idx) => (
+                      <div key={idx} className="rounded-lg bg-bg-mist p-2 font-mono text-[11px] text-ink">
+                        • {c}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+              {((evidenceTrace.evidence_sources && evidenceTrace.evidence_sources.length > 0) || (evidenceTrace.sources && evidenceTrace.sources.length > 0)) && (
+                <div>
+                  <span className="font-semibold block mb-1">Supporting Sources:</span>
+                  <div className="space-y-1">
+                    {(evidenceTrace.evidence_sources || []).map((s, idx) => (
+                      <div key={idx} className="rounded-lg bg-bg-mist p-2 font-mono text-[11px] text-stone">
+                        {s}
+                      </div>
+                    ))}
+                    {(evidenceTrace.sources || []).map((s, idx) => (
+                      <div key={`src-${idx}`} className="rounded-lg bg-bg-mist p-2 font-mono text-[11px] text-stone">
+                        {typeof s === "string" ? s : `${s.title} (${s.document_date || "N/A"})`}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

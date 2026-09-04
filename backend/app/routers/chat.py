@@ -29,39 +29,15 @@ from app.services import (
     web_search,
 )
 from app.services.clerk_auth import require_clerk_auth
+from app.services.domain_adapter import (
+    build_specialty_prompt_preamble,
+    call_remote_medgemma_adapter,
+    get_adapter_display_name,
+    resolve_adapter,
+)
 from app.services.mock_data import CHAT_SOURCES
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-# Mirrors the MEDGEMMA_MODELS specialty labels in
-# frontend/src/components/chat/ModelIndicator.tsx. "General Medicine" (the
-# base model) and any unrecognized value fall through to the unrestricted
-# system prompt below — every other key here gets a strict domain lock.
-SPECIALTY_DOMAINS: dict[str, str] = {
-    "Radiology": "medical imaging — X-rays, CT scans, MRI, ultrasound, PET scans, and interpretation of radiological findings",
-    "Dermatology": "skin, hair, and nail conditions — rashes, lesions, moles, acne, eczema, psoriasis, and dermoscopic findings",
-    "Pathology": "tissue histology, biopsy interpretation, cell pathology, and laboratory pathology findings",
-    "Ophthalmology": "eye and vision conditions — retinal health, fundus imaging, OCT scans, vision changes, and ocular disease",
-    "Chest X-Ray": "chest radiographs and thoracic imaging — lung fields, pneumothorax, pulmonary opacities, cardiac silhouette, and related thoracic findings",
-    "Clinical Reasoning": "structured differential diagnosis and step-by-step clinical reasoning across a patient's presenting symptoms",
-}
-
-
-def _specialty_preamble(specialty: str) -> str:
-    domain = SPECIALTY_DOMAINS[specialty]
-    return (
-        f"STRICT DOMAIN RESTRICTION — {specialty.upper()} ONLY:\n"
-        f"You are currently running as the {specialty} specialty model. You may ONLY answer "
-        f"questions about {domain}. If the patient's message is unrelated to {specialty} "
-        f"— including general symptoms, medications, or conditions outside this domain — "
-        f"you MUST NOT attempt to answer it, even partially. Instead, reply with exactly this "
-        f"and nothing else:\n"
-        f"\"This falls outside {specialty} — I'm currently restricted to {specialty}-only topics. "
-        f"Please switch to MedGemma 4B Base or a more relevant specialty model to continue.\"\n"
-        f"Do not add a partial answer, general advice, disclaimers, or extra commentary to that "
-        f"refusal. For messages that ARE within {specialty}, answer using the structure below, "
-        f"but keep every section strictly scoped to {specialty}.\n\n"
-    )
 
 
 def _now() -> str:
@@ -88,30 +64,153 @@ async def _refine_chat_title(db, session_id: str, user_message: str, assistant_r
     db.chat_sessions.update_one({"id": session_id}, {"$set": {"title": title}})
 
 
+def _aggregate_patient_ehr_context(db, patient_id: str) -> list[str]:
+    """Pulls all clinical details for the target patient from MongoDB collections:
+    - Basic demographics & biometrics (Age, Gender, Blood Group, Height, Weight, BMI) & vitals
+    - Active medications / prescriptions
+    - Diagnosed conditions
+    - Diet plan
+    - Attending doctor remarks & past consultation diagnoses
+    - Abnormal lab metrics
+    """
+    parts = []
+
+    # 1. Basic Demographics & Biometrics
+    pat = db.patients.find_one({"id": patient_id}, {"_id": 0})
+    user_prof = db.profiles.find_one({"clerkUserId": patient_id}, {"_id": 0})
+
+    if pat or user_prof:
+        name = (pat and pat.get("name")) or (user_prof and user_prof.get("fullName")) or patient_id
+        age = (pat and pat.get("age")) or (user_prof and user_prof.get("age")) or "N/A"
+        gender = (pat and pat.get("gender")) or "N/A"
+        blood_group = (pat and pat.get("blood_group")) or (user_prof and user_prof.get("bloodGroup")) or "N/A"
+        height_cm = (pat and pat.get("height_cm")) or (user_prof and user_prof.get("heightCm")) or 170.0
+        weight_kg = (pat and pat.get("weight_kg")) or (user_prof and user_prof.get("weightKg")) or 70.0
+
+        try:
+            h_val = float(height_cm)
+            w_val = float(weight_kg)
+            h_m = h_val / 100
+            bmi_val = round(w_val / (h_m * h_m), 1) if h_m > 0 else "N/A"
+        except (ValueError, TypeError):
+            bmi_val = "N/A"
+
+        parts.append(
+            f"[PATIENT DEMOGRAPHICS & BIOMETRICS]\n"
+            f"ID: {pat.get('patient_id_code') if pat else patient_id}\n"
+            f"Name: {name}\n"
+            f"Age: {age} y/o, Gender: {gender}, Blood Group: {blood_group}\n"
+            f"Height: {height_cm} cm, Weight: {weight_kg} kg, BMI: {bmi_val}"
+        )
+
+    # 2. Latest Vitals
+    vitals = list(db.vitals.find({"patient_id": patient_id}, {"_id": 0}).sort("recorded_at", -1).limit(1))
+    if vitals:
+        v = vitals[0]
+        parts.append(
+            f"[LATEST VITALS]\n"
+            f"Blood Pressure: {v.get('systolic') or v.get('systolic_bp', 120)}/{v.get('diastolic') or v.get('diastolic_bp', 80)} mmHg\n"
+            f"Heart Rate: {v.get('heart_rate', 72)} bpm, SpO2: {v.get('spo2_pct', 98)}%, Temp: {v.get('temperature_c', 37.0)}°C"
+        )
+
+    # 3. Active Prescriptions
+    prescriptions = list(db.prescriptions.find({"patient_id": patient_id, "status": "active"}, {"_id": 0}))
+    if prescriptions:
+        rx_lines = [
+            f"- {p.get('medication_name')}: {p.get('dosage')} ({p.get('frequency')}) — Instructions: {p.get('instructions', 'N/A')}"
+            for p in prescriptions
+        ]
+        parts.append(f"[CURRENT ACTIVE MEDICATIONS]\n" + "\n".join(rx_lines))
+
+    # 4. Diagnosed Conditions
+    conditions = list(db.patient_conditions.find({"patient_id": patient_id, "status": "active"}, {"_id": 0}))
+    if conditions:
+        cond_lines = [
+            f"- {c.get('condition_name')} (Diagnosed: {c.get('diagnosed_date', 'N/A')}) — Notes: {c.get('notes', '')}"
+            for c in conditions
+        ]
+        parts.append(f"[ACTIVE MEDICAL CONDITIONS]\n" + "\n".join(cond_lines))
+
+    # 5. Diet Plan
+    diet_doc = db.patient_diet.find_one({"patient_id": patient_id}, {"_id": 0})
+    if diet_doc and "diet_plan" in diet_doc:
+        dp = diet_doc["diet_plan"]
+        recs = dp.get("recommendations", [])
+        if recs:
+            parts.append(f"[DIET GUIDELINES & PLAN]\n" + "\n".join(f"- {r}" for r in recs))
+
+    # 6. Past Consultations & Doctor Remarks
+    consultations = list(db.consultations.find({"patient_id": patient_id, "status": "finalized"}, {"_id": 0}).sort("finalized_at", -1).limit(3))
+    if consultations:
+        consult_lines = []
+        for cs in consultations:
+            date_str = (cs.get("finalized_at") or cs.get("created_at") or "")[:10]
+            diag = cs.get("final_diagnosis") or cs.get("doctor_diagnosis") or "General Consultation"
+            notes = cs.get("doctor_notes") or "None"
+            consult_lines.append(f"- [{date_str}] Diagnosis: {diag} | Attending Doctor Notes: {notes}")
+        parts.append(f"[PAST CONSULTATIONS & DOCTOR REMARKS]\n" + "\n".join(consult_lines))
+
+    # 7. Recent Abnormal Lab Metrics
+    lab_metrics = list(db.lab_metrics.find({"patient_id": patient_id, "is_abnormal": 1}, {"_id": 0}).sort("recorded_at", -1).limit(5))
+    if lab_metrics:
+        lab_lines = [
+            f"- {lm.get('metric_name')}: {lm.get('value')} {lm.get('unit')} (Ref: {lm.get('reference_min')}-{lm.get('reference_max')})"
+            for lm in lab_metrics
+        ]
+        parts.append(f"[FLAGGED ABNORMAL LAB RESULTS]\n" + "\n".join(lab_lines))
+
+    return parts
+
+
 @router.get("/sessions", response_model=list[ChatSession])
 def list_sessions(
     patient_id: Optional[str] = Query(None),
     user_id: str = Depends(require_clerk_auth),
 ) -> list[dict]:
     db = get_patient_db()
-    query: dict = {"$or": [{"clerkUserId": user_id}, {"doctor_id": user_id}, {"clerkUserId": {"$exists": False}}]}
-    if patient_id:
+    query: dict = {"$or": [{"clerkUserId": user_id}, {"doctor_id": user_id}]}
+    if patient_id and isinstance(patient_id, str):
         query["patient_id"] = patient_id
     sessions = list(
         db.chat_sessions.find(query, {"_id": 0, "clerkUserId": 0}).sort("updatedAt", -1)
     )
+    # Ensure patient_name and is_patient_scoped are populated
+    for s in sessions:
+        p_id = s.get("patient_id")
+        if p_id and p_id != "general":
+            s["is_patient_scoped"] = True
+            if not s.get("patient_name"):
+                pat = db.patients.find_one({"id": p_id}, {"_id": 0, "name": 1})
+                s["patient_name"] = pat.get("name") if pat else p_id
+        else:
+            s["is_patient_scoped"] = False
+            s["patient_name"] = None
+
     return sessions
 
 
 @router.post("/sessions", response_model=ChatSession)
 def create_session(body: ChatSessionIn, user_id: str = Depends(require_clerk_auth)) -> dict:
     db = get_patient_db()
+    target_patient_id = getattr(body, "patient_id", None) or "general"
+    patient_name = getattr(body, "patient_name", None)
+    is_scoped = bool(target_patient_id and target_patient_id != "general")
+
+    if is_scoped and not patient_name:
+        pat = db.patients.find_one({"id": target_patient_id}, {"_id": 0, "name": 1})
+        patient_name = pat.get("name") if pat else target_patient_id
+
+    default_title = f"Patient Copilot: {patient_name}" if is_scoped else "General Clinical Copilot"
+    title = body.title or default_title
+
     session = {
         "id": _new_id("sess"),
         "clerkUserId": user_id,
         "doctor_id": user_id,
-        "patient_id": getattr(body, "patient_id", None) or "general",
-        "title": body.title or "New chat",
+        "patient_id": target_patient_id,
+        "patient_name": patient_name if is_scoped else None,
+        "is_patient_scoped": is_scoped,
+        "title": title,
         "createdAt": _now(),
         "updatedAt": _now(),
         "sourceIds": [],
@@ -153,6 +252,12 @@ async def post_session_message(
 
     is_first_message = db.chat_messages.count_documents({"sessionId": session_id}) == 0
 
+    # 1. Resolve domain adapter (@tag explicit or implicit classification)
+    adapter_key, clean_content, is_explicit_adapter = resolve_adapter(
+        body.content, explicit_specialty=body.adapter or body.specialty
+    )
+    adapter_label = get_adapter_display_name(adapter_key)
+
     user_message = {
         "id": _new_id("m"),
         "sessionId": session_id,
@@ -161,10 +266,10 @@ async def post_session_message(
         "createdAt": _now(),
     }
     db.chat_messages.insert_one({**user_message})
-    await _remember_message(session_id, "user", body.content, user_id)
+    await _remember_message(session_id, "user", clean_content, user_id)
 
-    # 1. Semantic Clinical Triage & Red-Flag Layer
-    triage_result = await triage.eval_triage(body.content)
+    # 2. Semantic Clinical Triage & Red-Flag Guardrail
+    triage_result = await triage.eval_triage(clean_content)
     if triage_result.get("is_red_flag"):
         reason = triage_result.get("red_flag_reason") or "Potential clinical emergency indicator detected."
         guidance = triage_result.get("escalation_guidance") or "Please seek immediate emergency medical care (call 911 or go to the nearest Emergency Department immediately)."
@@ -181,22 +286,24 @@ async def post_session_message(
             "content": escalation_text,
             "createdAt": _now(),
             "isRedFlag": True,
+            "adapter_used": adapter_label,
         }
         db.chat_messages.insert_one({**assistant_message})
         await _remember_message(session_id, "assistant", escalation_text, user_id)
 
         update = {"updatedAt": _now()}
         if is_first_message:
-            update["title"] = body.content[:60]
+            update["title"] = clean_content[:60]
         db.chat_sessions.update_one({"id": session_id}, {"$set": update})
         if is_first_message:
-            asyncio.create_task(_refine_chat_title(db, session_id, body.content, escalation_text))
+            asyncio.create_task(_refine_chat_title(db, session_id, clean_content, escalation_text))
         return assistant_message
 
+    # 3. Optional deep search
     search_query = (
-        body.content
+        clean_content
         if body.deepSearch
-        else await model_router.decide_web_search(body.content)
+        else await model_router.decide_web_search(clean_content)
     )
 
     web_sources: list[dict] = []
@@ -214,18 +321,49 @@ async def post_session_message(
             {"id": session_id}, {"$addToSet": {"sourceIds": {"$each": web_source_ids}}}
         )
 
-    context_chunks = rag.retrieve(body.content, user_id, top_k=8, allowed_source_ids=allowed_source_ids)
-
-    # Concurrently fetch user profile & environment snapshot for Priority 1 grounding
-    profile_task = asyncio.to_thread(db.profiles.find_one, {"clerkUserId": user_id}, {"_id": 0})
+    # 4. Multi-Context Assembly
+    context_chunks = rag.retrieve(clean_content, user_id, top_k=6, allowed_source_ids=allowed_source_ids)
     weather_task = weather.get_environment_snapshot()
-    user_profile, env_snapshot = await asyncio.gather(profile_task, weather_task)
+    env_snapshot = await weather_task
 
     context_parts: list[str] = []
 
-    if user_profile:
-        conditions_str = ", ".join(user_profile.get("conditions", [])) or "None listed"
-        meds = user_profile.get("medications", [])
+    # Inject Patient EHR Records if session is patient-scoped or if user is patient
+    session_patient_id = session.get("patient_id")
+    if session_patient_id and session_patient_id != "general":
+        ehr_blocks = _aggregate_patient_ehr_context(db, session_patient_id)
+        context_parts.extend(ehr_blocks)
+    else:
+        # Patient's own biometric and clinical profile context
+        user_profile = db.profiles.find_one({"clerkUserId": user_id}, {"_id": 0})
+        pat_record = db.patients.find_one({"$or": [{"id": user_id}, {"clerk_id": user_id}]}, {"_id": 0})
+
+        full_name = (user_profile and user_profile.get("fullName")) or (pat_record and pat_record.get("name")) or "Patient"
+        age = (user_profile and user_profile.get("age")) or (pat_record and pat_record.get("age")) or "N/A"
+        gender = (pat_record and pat_record.get("gender")) or "N/A"
+        blood_group = (user_profile and user_profile.get("bloodGroup")) or (pat_record and pat_record.get("blood_group")) or "N/A"
+        height_cm = (user_profile and user_profile.get("heightCm")) or (pat_record and pat_record.get("height_cm")) or 170.0
+        weight_kg = (user_profile and user_profile.get("weightKg")) or (pat_record and pat_record.get("weight_kg")) or 70.0
+
+        try:
+            h_val = float(height_cm)
+            w_val = float(weight_kg)
+            h_m = h_val / 100
+            bmi_val = round(w_val / (h_m * h_m), 1) if h_m > 0 else "N/A"
+        except (ValueError, TypeError):
+            bmi_val = "N/A"
+
+        conditions_list = (user_profile and user_profile.get("conditions")) or []
+        if not conditions_list and pat_record:
+            cond_docs = list(db.patient_conditions.find({"patient_id": pat_record.get("id", user_id)}, {"_id": 0, "condition_name": 1}))
+            conditions_list = [c["condition_name"] for c in cond_docs if c.get("condition_name")]
+        conditions_str = ", ".join(conditions_list) or "None listed"
+
+        meds = (user_profile and user_profile.get("medications")) or []
+        if not meds and pat_record:
+            presc_docs = list(db.prescriptions.find({"patient_id": pat_record.get("id", user_id), "status": "active"}, {"_id": 0}))
+            meds = [{"name": p.get("medication_name"), "dosage": p.get("dosage", "")} for p in presc_docs if p.get("medication_name")]
+
         meds_str = (
             ", ".join(
                 f"{m['name']} ({m['dosage']})" if m.get("dosage") else m["name"]
@@ -234,20 +372,22 @@ async def post_session_message(
             )
             or "None listed"
         )
+
         context_parts.append(
-            f"[PATIENT PROFILE]\n"
-            f"Name: {user_profile.get('fullName', 'Patient')}\n"
-            f"Age: {user_profile.get('age', 'N/A')}, BMI: {user_profile.get('bmi', 'N/A')}, Blood Group: {user_profile.get('bloodGroup', 'N/A')}\n"
-            f"Active Conditions: {conditions_str}\n"
-            f"Current Medications: {meds_str}"
+            f"[PATIENT DEMOGRAPHICS & BIOMETRIC PROFILE]\n"
+            f"Name: {full_name}\n"
+            f"Age: {age} y/o, Gender: {gender}, Blood Group: {blood_group}\n"
+            f"Height: {height_cm} cm, Weight: {weight_kg} kg, BMI: {bmi_val}\n"
+            f"Active Diagnosed Conditions: {conditions_str}\n"
+            f"Current Active Medications: {meds_str}"
         )
 
-    # Inject longitudinal patient medical memory
+    # Inject longitudinal patient medical memory (Knowledge Graph)
     memory_block = symptom_tracker.format_medical_memory_block(user_id)
     if memory_block:
         context_parts.append(memory_block)
 
-    # Always include live local environment & AQI snapshot for comprehensive health grounding
+    # Inject live environment snapshot
     if env_snapshot:
         pollutants_str = ", ".join(
             f"{p['label']}: {p['value']} {p['unit']}"
@@ -261,71 +401,40 @@ async def post_session_message(
             f"Pollutants: {pollutants_str}"
         )
 
+    # Inject RAG excerpts
     if context_chunks:
         context_text = "\n\n".join(chunk["text"] for chunk in context_chunks)
-        context_parts.append(f"[MEDICAL RECORDS & CONVERSATION EXCERPTS]\n{context_text}")
+        context_parts.append(f"[MEDICAL RECORDS & RETRIEVAL EXCERPTS]\n{context_text}")
 
-    is_greeting = body.content.strip().lower() in (
-        "hi", "hello", "hey", "hi there", "hello there", "good morning", "good evening", "hey there", "hi medsys"
-    )
+    context_block = "\n\n".join(context_parts) if context_parts else ""
+    user_prompt = f"{context_block}\n\nClinical Query / Statement: {clean_content}" if context_block else clean_content
 
-    if is_greeting:
-        system_instructions = (
-            "You are MedSys, a warm, caring, and deeply empathetic personal health companion. "
-            "Speak naturally, like a friendly family doctor.\n\n"
-            "GREETING RESPONSE STRUCTURE:\n"
-            "1. Warm Header: 'Hello [Patient Name]! 🌞' (or friendly emoji) followed by a short empathetic opening.\n"
-            "2. Symptom & Routine Check-in: Ask 1-2 focused questions about how they are feeling today, checking on any new/worsening symptoms or medication schedule changes.\n"
-            "3. Local Environmental Snapshot: Explicitly reference their location (e.g. Bengaluru), current weather, and live AQI score from [LIVE LOCAL ENVIRONMENT & AQI], providing practical comfort advice.\n"
-            "4. Supportive Closing: Warmly invite them to share symptom updates, medication questions, or anything on their mind."
-        )
+    # 5. Remote MedGemma Adapter Call with Fallback
+    remote_reply = await call_remote_medgemma_adapter(adapter_key, user_prompt)
+    if remote_reply:
+        reply_text = remote_reply
+        entities = {"symptoms": [], "medications": []}
     else:
+        # Local / Cloud LLM with domain specialty preamble & 512-token budget guidance
+        specialty_preamble = build_specialty_prompt_preamble(adapter_key)
         base_instructions = (
-            "You are MedSys, a warm, caring, and deeply clinical personal health companion. "
-            "When a patient reports a symptom or health concern, provide a comprehensive, beautifully structured medical assessment in clean Markdown:\n\n"
-            "RESPONSE STRUCTURE:\n"
-            "Start with a warm 1-sentence opening addressing the patient by name.\n\n"
-            "1️⃣ Quick snapshot of the key factors\n"
-            "Markdown table with columns: Factor | What it means for you\n"
-            "- Age / BMI\n"
-            "- Active conditions\n"
-            "- Current meds (with safe dosage notes)\n"
-            "- Environment (Location, AQI, Weather)\n\n"
-            "2️⃣ Why the symptom is likely behaving the way it is\n"
-            "Analyze interactions between their environment, active conditions, medications, and reported symptoms.\n\n"
-            "3️⃣ Practical, personalized steps you can take today\n"
-            "Markdown table with columns: What to do | How to do it | Why it helps\n"
-            "(Cover hydration, remedies, OTC safety & limits, positioning, vitals tracking).\n\n"
-            "4️⃣ Red-flag symptoms – when to seek immediate care\n"
-            "Table (Symptom | Why it matters) detailing emergency escalation red flags.\n\n"
-            "5️⃣ Next steps – what to do in the next 24–48 hours\n"
-            "Actionable timeline and tracking guidance.\n\n"
-            "6️⃣ Quick FAQ for you\n"
-            "Table (Question | Answer) addressing common patient concerns.\n\n"
-            "TL;DR\n"
-            "Bulleted summary of key takeaways and safety rules at the bottom."
+            "You are MedSys AI Clinical Platform, an advanced diagnostic copilot.\n"
+            "Provide a clear, highly structured, evidence-grounded response in Markdown.\n"
+            "Structure with Key Findings, Differentials/Interpretation, and Next Steps.\n"
+            "Keep the response dense, high-yield, and strictly within 512 tokens."
         )
-        if body.specialty in SPECIALTY_DOMAINS:
-            system_instructions = _specialty_preamble(body.specialty) + base_instructions
-        else:
-            system_instructions = base_instructions
+        system_instructions = specialty_preamble + base_instructions
 
-    if context_parts:
-        context_block = "\n\n".join(context_parts)
-        user_prompt = f"{context_block}\n\nPatient Statement: {body.content}"
+        reply_text, entities = await asyncio.gather(
+            model_router.generate_reply(user_prompt, system=system_instructions, images=body.images),
+            model_router.extract_chat_entities(clean_content),
+        )
 
-    # Concurrently generate reply and extract chat entities
-    reply_text, entities = await asyncio.gather(
-        model_router.generate_reply(user_prompt, system=system_instructions, images=body.images),
-        model_router.extract_chat_entities(body.content),
-    )
-
-
-    # Generate interactive quick-reply option chips if applicable
-    opts = await quick_options.generate_quick_options(body.content, reply_text)
+    # 6. Interactive quick options and symptom tracking
+    opts = await quick_options.generate_quick_options(clean_content, reply_text)
 
     today = _now()[:10]
-    for symptom in entities["symptoms"]:
+    for symptom in entities.get("symptoms", []):
         try:
             normalized_symptom = await ai_graph_builder.normalize_symptom_name(symptom)
             await supermemory_client.log_symptom(normalized_symptom, today, user_id)
@@ -333,7 +442,7 @@ async def post_session_message(
             asyncio.create_task(ai_graph_builder.compute_and_store_symptom_knowledge(normalized_symptom))
         except Exception:
             pass
-    for medication in entities["medications"]:
+    for medication in entities.get("medications", []):
         try:
             await supermemory_client.log_medication(medication["name"], medication["dosage"], today, user_id)
         except httpx.HTTPError:
@@ -345,6 +454,7 @@ async def post_session_message(
         "role": "assistant",
         "content": reply_text,
         "createdAt": _now(),
+        "adapter_used": adapter_label,
         **({"quickOptions": opts} if opts else {}),
     }
     db.chat_messages.insert_one({**assistant_message})
@@ -353,10 +463,10 @@ async def post_session_message(
 
     update = {"updatedAt": _now()}
     if is_first_message:
-        update["title"] = body.content[:60]
+        update["title"] = clean_content[:60]
     db.chat_sessions.update_one({"id": session_id}, {"$set": update})
     if is_first_message:
-        asyncio.create_task(_refine_chat_title(db, session_id, body.content, reply_text))
+        asyncio.create_task(_refine_chat_title(db, session_id, clean_content, reply_text))
 
     return assistant_message
 

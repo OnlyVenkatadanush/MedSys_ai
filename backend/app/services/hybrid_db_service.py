@@ -8,13 +8,111 @@
 """
 
 from datetime import datetime, timezone
+import os
+import re
 import uuid
+import asyncio
 from typing import Dict, Any, List, Optional
 
 from app.db import get_patient_db
+from app.services import model_router, rag, supermemory_client
+from app.services.ocr import extract_text_from_file
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # ==================== 1. LAB DOCUMENT NORMALIZATION PIPELINE ====================
+
+async def ingest_unified_medical_document(
+    file_bytes: bytes,
+    original_filename: str,
+    title: str,
+    patient_id: str,
+    uploaded_by: str,
+    user_id: str,
+) -> Dict[str, Any]:
+    """Unified Medical Document Ingestion:
+    1. Saves physical binary to uploads/ with static URL.
+    2. Runs OCR text extraction.
+    3. Runs model_router report summary generation and document classification.
+    4. Extracts structured lab metrics (via model_router.extract_lab_metrics) and stores in db.lab_reports & db.lab_metrics.
+    5. Ingests into Pinecone Vector RAG and db.sources for Chat citation.
+    6. Logs document into Supermemory Knowledge Graph.
+    7. Updates medical history conditions and medications cache.
+    """
+    db = get_patient_db()
+    orig_name = original_filename or "document.pdf"
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", orig_name)
+    stored_filename = f"{uuid.uuid4().hex[:12]}_{safe_name}"
+    stored_path = os.path.join(UPLOAD_DIR, stored_filename)
+
+    with open(stored_path, "wb") as f:
+        f.write(file_bytes)
+
+    file_url = f"/uploads/{stored_filename}"
+
+    # Extract text via OCR
+    extracted_text = ""
+    try:
+        extracted_text = extract_text_from_file(file_bytes, orig_name)
+    except Exception as e:
+        extracted_text = f"File uploaded ({orig_name}). Manual review pending. [OCR Error: {e}]"
+
+    # Parallel extraction of summary, classification, lab metrics, and medical history
+    report_text, kind, parsed_metrics, extracted_history = await asyncio.gather(
+        model_router.generate_report(extracted_text, orig_name),
+        model_router.classify_document(extracted_text),
+        model_router.extract_lab_metrics(extracted_text),
+        model_router.extract_medical_history([extracted_text]),
+        return_exceptions=False,
+    )
+
+    # 1. Ingest into Pinecone RAG & db.sources
+    rag_source = rag.ingest_report(
+        orig_name,
+        kind,
+        report_text,
+        owner_id=user_id,
+        extracted=extracted_history,
+    )
+    db.sources.update_one(
+        {"id": rag_source["id"]},
+        {"$set": {"url": file_url, "file_url": file_url, "patient_id": patient_id}},
+    )
+    rag_source["url"] = file_url
+    rag_source["file_url"] = file_url
+
+    # 2. Store in db.raw_lab_documents, db.lab_reports, db.lab_metrics
+    lab_report_dict = process_and_store_lab_report(
+        patient_id=patient_id,
+        uploaded_by=uploaded_by,
+        title=title or orig_name,
+        file_name=orig_name,
+        file_url=file_url,
+        ocr_text=extracted_text,
+        parsed_metrics=parsed_metrics,
+    )
+
+    # 3. Supermemory Knowledge Graph logging
+    try:
+        await supermemory_client.log_document(rag_source["id"], orig_name, kind, report_text, user_id)
+    except Exception:
+        pass
+
+    return {
+        "id": lab_report_dict["id"],
+        "source_id": rag_source["id"],
+        "patient_id": patient_id,
+        "uploaded_by": uploaded_by,
+        "title": title or orig_name,
+        "file_url": file_url,
+        "extracted_text": extracted_text,
+        "report_summary": report_text,
+        "kind": kind,
+        "metrics": parsed_metrics,
+        "uploaded_at": lab_report_dict["uploaded_at"],
+    }
 
 def process_and_store_lab_report(
     patient_id: str,

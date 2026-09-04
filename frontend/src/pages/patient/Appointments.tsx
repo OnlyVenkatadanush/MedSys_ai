@@ -30,10 +30,24 @@ export const Appointments: React.FC = () => {
   const [patientAppts, setPatientAppts] = useState<AppointmentRecord[]>([]);
   const [loadingAppts, setLoadingAppts] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"book" | "my_appts">("book");
+  const [latestConfirmed, setLatestConfirmed] = useState<AppointmentRecord | null>(null);
 
   useEffect(() => {
     loadAvailability();
     loadPatientAppointments();
+
+    // Live auto-refresh polling every 8 seconds so the patient gets instant status updates
+    const interval = setInterval(() => {
+      fetchPatientAppointments()
+        .then((res) => {
+          setPatientAppts(res);
+          const confirmed = res.find((a) => a.status === "confirmed");
+          if (confirmed) setLatestConfirmed(confirmed);
+        })
+        .catch(() => {});
+    }, 8000);
+
+    return () => clearInterval(interval);
   }, [selectedDate]);
 
   const loadAvailability = async () => {
@@ -53,6 +67,8 @@ export const Appointments: React.FC = () => {
       setLoadingAppts(true);
       const res = await fetchPatientAppointments();
       setPatientAppts(res);
+      const confirmed = res.find((a) => a.status === "confirmed");
+      if (confirmed) setLatestConfirmed(confirmed);
     } catch (err) {
       console.error("Failed to load patient appointments", err);
     } finally {
@@ -92,10 +108,40 @@ export const Appointments: React.FC = () => {
       <PageHeader
         eyebrow="Patient Care Scheduling"
         title="Book & Manage Appointments"
-        meta="Check doctor availability slots, request new appointment consultations, and track approval status."
+        meta="Check doctor availability slots, request new appointment consultations, and track live approval status in real time."
       />
 
       <div className="px-5 sm:px-8 space-y-6">
+        {/* REAL-TIME APPOINTMENT CONFIRMATION ALERT BANNER */}
+        {latestConfirmed && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border border-teal-deep/30 bg-teal-deep/5 p-4 shadow-xs flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-deep text-white shrink-0">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-teal-deep block">
+                  ⚡ LIVE APPOINTMENT UPDATE
+                </span>
+                <p className="text-xs text-ink font-semibold">
+                  Your appointment with <span className="text-teal-deep">{latestConfirmed.doctor_name}</span> is confirmed for{" "}
+                  <span className="font-mono">{(latestConfirmed.appointment_date || "").replace("T", " ")}</span> ({latestConfirmed.reason}).
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab("my_appts")}
+              className="rounded-xl border border-teal-deep/30 bg-surface-card px-3 py-1.5 font-mono text-xs font-bold text-teal-deep hover:bg-teal-deep/10 shrink-0"
+            >
+              View Booking
+            </button>
+          </motion.div>
+        )}
+
         {/* TABS */}
         <div className="flex items-center justify-between border-b border-hairline/80 pb-4">
           <div className="flex items-center gap-2">

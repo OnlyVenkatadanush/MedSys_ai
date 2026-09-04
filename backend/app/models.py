@@ -69,6 +69,7 @@ class ChatMessage(BaseModel):
     createdAt: str
     isRedFlag: bool | None = None
     quickOptions: list[str] | None = None
+    adapter_used: str | None = None
 
 
 class ChatSession(BaseModel):
@@ -79,11 +80,14 @@ class ChatSession(BaseModel):
     sourceIds: list[str] = []
     doctor_id: str | None = None
     patient_id: str | None = "general"
+    patient_name: str | None = None
+    is_patient_scoped: bool | None = False
 
 
 class ChatSessionIn(BaseModel):
     title: str | None = None
     patient_id: str | None = "general"
+    patient_name: str | None = None
 
 
 class ChatSessionSourcesIn(BaseModel):
@@ -94,9 +98,9 @@ class ChatMessageIn(BaseModel):
     content: str
     deepSearch: bool = False
     images: list[str] | None = None
-    # Selected MedGemma specialty from the model picker (e.g. "Radiology",
-    # "Dermatology") — None/"General Medicine" means no domain restriction.
+    # Selected MedGemma specialty / adapter from picker or tag (e.g. "radiology", "dermatology")
     specialty: str | None = None
+    adapter: str | None = None
 
 
 class ModelStatus(BaseModel):

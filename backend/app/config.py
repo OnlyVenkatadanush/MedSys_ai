@@ -65,6 +65,10 @@ class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+    # Optional public Ngrok or remote URL for MedGemma multi-adapter service.
+    # When unset or unreachable, seamlessly falls back to active LLM.
+    medgemma_adapter_url: str = os.getenv("MEDGEMMA_ADAPTER_URL", "").rstrip("/")
+
     # When on, unauthenticated requests get an isolated per-browser demo
     # identity (see services/clerk_auth.py) instead of being rejected.
     # Never a shared identity — each demo browser session is auto-provisioned

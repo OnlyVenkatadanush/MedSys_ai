@@ -45,6 +45,11 @@ def build_patient_context(patient_id: str) -> Dict[str, Any]:
     # 8. Active Alerts
     alerts = list(db.alerts.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1))
 
+    h_cm = float(patient_data.get("height_cm") or 170.0)
+    w_kg = float(patient_data.get("weight_kg") or 70.0)
+    h_m = h_cm / 100
+    bmi = round(w_kg / (h_m * h_m), 1) if h_m > 0 else 0.0
+
     return {
         "patient_id": patient_id,
         "profile": {
@@ -52,7 +57,9 @@ def build_patient_context(patient_id: str) -> Dict[str, Any]:
             "age": patient_data.get("age"),
             "gender": patient_data.get("gender"),
             "bloodGroup": patient_data.get("blood_group"),
-            "weightKg": patient_data.get("weight_kg"),
+            "heightCm": h_cm,
+            "weightKg": w_kg,
+            "bmi": bmi,
             "conditions": conditions,
             "allergies": allergies,
         },

@@ -1,0 +1,9 @@
+
+    COMPREHENSIVE METABOLIC PANEL (CMP)
+    Patient: Test Subject
+    Fasting Blood Sugar: 145 mg/dL (Reference: 70-99)
+    HbA1c: 7.4 % (Reference: 4.0-5.6)
+    Serum Creatinine: 1.6 mg/dL (Reference: 0.6-1.2)
+    Total Cholesterol: 240 mg/dL (Reference: 125-200)
+    Hemoglobin: 14.2 g/dL (Reference: 12.0-16.0)
+    

@@ -39,7 +39,30 @@ async def get_profile(user_id: str = Depends(require_clerk_auth)) -> dict:
     db = get_patient_db()
     profile = db.profiles.find_one({"clerkUserId": user_id}, {"_id": 0, "clerkUserId": 0})
     if not profile:
-        profile = dict(DEFAULT_PROFILE)
+        # Fallback to db.patients if profile hasn't been explicitly saved yet
+        pat = db.patients.find_one({"$or": [{"id": user_id}, {"clerk_id": user_id}]}, {"_id": 0})
+        if pat:
+            h_cm = float(pat.get("height_cm") or 170.0)
+            w_kg = float(pat.get("weight_kg") or 70.0)
+            h_m = h_cm / 100
+            bmi = round(w_kg / (h_m * h_m), 1) if h_m > 0 else 0.0
+            profile = {
+                "fullName": pat.get("name") or "Patient",
+                "age": int(pat.get("age") or 35),
+                "weightKg": w_kg,
+                "heightCm": h_cm,
+                "bmi": bmi,
+                "bloodGroup": pat.get("blood_group") or "O+",
+                "conditions": [],
+                "medications": [],
+                "emergencyContact": {
+                    "name": pat.get("emergency_contact_name") or "",
+                    "relation": "",
+                    "phone": pat.get("emergency_contact_phone") or "",
+                },
+            }
+        else:
+            profile = dict(DEFAULT_PROFILE)
 
     sources = list(
         db.sources.find(
@@ -108,8 +131,26 @@ def save_profile(body: ProfileIn, user_id: str = Depends(require_clerk_auth)) ->
     height_m = body.heightCm / 100
     bmi = round(body.weightKg / (height_m * height_m), 1) if height_m > 0 else 0.0
     record = {**body.model_dump(), "bmi": bmi}
+    
+    # 1. Update/Upsert in db.profiles collection
     db.profiles.update_one(
         {"clerkUserId": user_id}, {"$set": {**record, "clerkUserId": user_id}}, upsert=True
+    )
+    
+    # 2. Synchronize biometrics and demographics into db.patients collection
+    db.patients.update_one(
+        {"$or": [{"id": user_id}, {"clerk_id": user_id}]},
+        {
+            "$set": {
+                "name": body.fullName,
+                "age": body.age,
+                "blood_group": body.bloodGroup,
+                "height_cm": body.heightCm,
+                "weight_kg": body.weightKg,
+                "emergency_contact_name": body.emergencyContact.name,
+                "emergency_contact_phone": body.emergencyContact.phone,
+            }
+        },
     )
     return record
 

@@ -13,6 +13,16 @@ interface ComposerProps {
   disabled?: boolean;
 }
 
+const ADAPTER_TAGS = [
+  { tag: "@radiology", label: "Radiology", icon: "🩻" },
+  { tag: "@dermatology", label: "Dermatology", icon: "✨" },
+  { tag: "@pathology", label: "Pathology", icon: "🔬" },
+  { tag: "@ophthalmology", label: "Ophthalmology", icon: "👁️" },
+  { tag: "@chest_xray", label: "Chest X-Ray", icon: "🫁" },
+  { tag: "@cardiology", label: "Cardiology", icon: "❤️" },
+  { tag: "@clinical_reasoning", label: "Reasoning", icon: "🧠" },
+];
+
 export function Composer({
   onSend,
   availableSources,
@@ -32,6 +42,11 @@ export function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  function insertAdapterTag(tag: string) {
+    const clean = value.replace(/@[a-zA-Z0-9_]+\s*/g, "").trim();
+    setValue(`${tag} ${clean}`.trim() + (clean ? "" : " "));
+  }
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -111,6 +126,31 @@ export function Composer({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
       {micError && <p className="text-[12px] text-clay-alert">{micError}</p>}
+
+      {/* Quick Adapter Tags Bar */}
+      <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-0.5 text-xs text-stone-600">
+        <span className="font-mono text-[10px] font-bold tracking-wider text-stone-600 uppercase mr-1">
+          Adapters:
+        </span>
+        {ADAPTER_TAGS.map(({ tag, label, icon }) => {
+          const isSelected = value.toLowerCase().includes(tag);
+          return (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => insertAdapterTag(tag)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
+                isSelected
+                  ? "border-teal-600 bg-teal-50 text-teal-900 font-semibold"
+                  : "border-stone-200 bg-white/80 text-stone-600 hover:border-stone-300 hover:bg-stone-100 hover:text-stone-900"
+              }`}
+            >
+              <span>{icon}</span>
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Image Preview Attachment Badge */}
       {attachedImage && (

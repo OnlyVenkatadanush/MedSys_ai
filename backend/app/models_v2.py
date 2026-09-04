@@ -163,6 +163,7 @@ class MedicationLogIn(BaseModel):
     medication_name: str
     dosage: str
     status: str = "taken"
+    notes: Optional[str] = ""
 
 
 class MedicationLogRecord(BaseModel):
@@ -173,6 +174,7 @@ class MedicationLogRecord(BaseModel):
     dosage: str
     timestamp: str
     status: str
+    notes: Optional[str] = ""
 
 
 class MealLogIn(BaseModel):
@@ -314,6 +316,7 @@ class LabReportRecord(BaseModel):
     patient_id: str
     uploaded_by: str
     title: str
+    file_url: Optional[str] = ""
     extracted_text: str
     metrics: List[LabMetric]
     uploaded_at: str

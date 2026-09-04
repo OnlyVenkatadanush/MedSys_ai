@@ -165,6 +165,28 @@ def _provision_demo_account(role: UserRole, demo_session_id: str) -> dict:
             "clerk_id": demo_clerk_id,
         }
         get_patient_db().patients.insert_one(record)
+        get_patient_db().profiles.update_one(
+            {"clerkUserId": new_id},
+            {
+                "$set": {
+                    "clerkUserId": new_id,
+                    "fullName": f"Demo Patient {short[:6]}",
+                    "age": 35,
+                    "weightKg": 70.0,
+                    "heightCm": 170.0,
+                    "bmi": 24.2,
+                    "bloodGroup": "O+",
+                    "conditions": [],
+                    "medications": [],
+                    "emergencyContact": {
+                        "name": "",
+                        "relation": "",
+                        "phone": "",
+                    },
+                }
+            },
+            upsert=True,
+        )
 
     record.pop("_id", None)
     return record
@@ -269,8 +291,7 @@ def require_role(required_role: UserRole):
 def verify_patient_access(target_patient_id: str, user: AuthenticatedUser) -> bool:
     """Verifies patient data isolation:
     - Patients can ONLY access their own patient record.
-    - Doctors can access assigned patients. If a patient exists in MongoDB but has no active
-      assignment row for this doctor yet, auto-provisions an active doctor_patient link.
+    - Doctors can access assigned patients only.
     """
     if user.role == "admin":
         return True
@@ -283,24 +304,7 @@ def verify_patient_access(target_patient_id: str, user: AuthenticatedUser) -> bo
         row = db.doctor_patient.find_one(
             {"doctor_id": user.user_id, "patient_id": target_patient_id, "status": "active"}
         )
-        if row is not None:
-            return True
-
-        # Check if target patient exists in db.patients
-        p_row = db.patients.find_one({"id": target_patient_id}, {"_id": 0, "id": 1})
-        if p_row is not None:
-            now = datetime.now(timezone.utc).isoformat()
-            db.doctor_patient.update_one(
-                {"doctor_id": user.user_id, "patient_id": target_patient_id},
-                {"$set": {
-                    "id": f"asgn_{uuid.uuid4().hex[:10]}",
-                    "doctor_id": user.user_id,
-                    "patient_id": target_patient_id,
-                    "status": "active",
-                    "assigned_at": now,
-                }},
-                upsert=True,
-            )
-            return True
+        return row is not None
 
     return False
+

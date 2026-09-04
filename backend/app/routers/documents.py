@@ -4,6 +4,8 @@ Raw OCR document -> MongoDB (raw_lab_documents)
 Normalized lab metrics -> MongoDB (lab_reports & lab_metrics)
 """
 
+import os
+import re
 from datetime import datetime, timezone
 import uuid
 from typing import List
@@ -17,6 +19,9 @@ from app.services.hybrid_db_service import process_and_store_lab_report
 from app.services.ocr import extract_text_from_file
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @router.get("/lab-reports", response_model=List[LabReportRecord])
@@ -49,30 +54,12 @@ async def list_lab_reports(
                 patient_id=r["patient_id"],
                 uploaded_by=r["uploaded_by"],
                 title=r["title"],
-                file_url=r["file_path"],
+                file_url=r.get("file_path") or r.get("file_url") or "",
                 extracted_text=r["ocr_text"],
                 metrics=metrics,
                 uploaded_at=r["uploaded_at"],
             )
         )
-
-    if len(reports) == 0:
-        now = datetime.now(timezone.utc).isoformat()
-        sample_report = LabReportRecord(
-            id=f"lab_{uuid.uuid4().hex[:10]}",
-            patient_id=target_id,
-            uploaded_by="Patient",
-            title="Complete Blood Count (CBC) & Metabolic Panel",
-            extracted_text="Hemoglobin: 14.2 g/dL, Fasting Blood Glucose: 105 mg/dL (High), Total Cholesterol: 210 mg/dL",
-            metrics=[
-                LabMetric(name="Hemoglobin", value=14.2, unit="g/dL", reference_range="13.5-17.5", is_abnormal=False),
-                LabMetric(name="Fasting Glucose", value=105.0, unit="mg/dL", reference_range="70-99", is_abnormal=True),
-                LabMetric(name="Total Cholesterol", value=210.0, unit="mg/dL", reference_range="<200", is_abnormal=True),
-                LabMetric(name="Serum Creatinine", value=0.9, unit="mg/dL", reference_range="0.7-1.3", is_abnormal=False),
-            ],
-            uploaded_at=now,
-        )
-        reports = [sample_report]
 
     return reports
 
@@ -84,58 +71,55 @@ async def upload_lab_report(
     file: UploadFile = File(...),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Uploads a lab report:
-    1. Stores raw document, OCR text & raw extraction dict in MongoDB (raw_lab_documents).
-    2. Inserts normalized metrics into MongoDB (lab_reports & lab_metrics) for time-series trend graphing.
+    """Uploads a lab report through the Unified Ingestion Pipeline:
+    1. Saves physical binary to backend/uploads/ with static file_url.
+    2. Runs OCR text extraction.
+    3. Runs model_router report summary & structured lab metric extraction.
+    4. Inserts normalized metrics into MongoDB (lab_reports & lab_metrics) for time-series trend graphing.
+    5. Ingests document into Pinecone Vector RAG & db.sources so Chat can cite it.
+    6. Logs document into Supermemory Knowledge Graph.
     """
     target_patient_id = patient_id if user.role == "doctor" else user.user_id
-
     file_bytes = await file.read()
-    extracted_text = ""
-    try:
-        extracted_text = extract_text_from_file(file_bytes, file.filename or "lab_report.pdf")
-    except Exception as e:
-        extracted_text = f"File uploaded ({file.filename}). Manual review pending. [OCR Error: {e}]"
+    orig_name = file.filename or "lab_report.pdf"
 
-    parsed_metrics = [
-        {"name": "Fasting Glucose", "value": 142.0, "unit": "mg/dL", "reference_range": "70-99", "is_abnormal": True},
-        {"name": "HbA1c", "value": 7.2, "unit": "%", "reference_range": "4.0-5.6", "is_abnormal": True},
-    ]
+    from app.services.hybrid_db_service import ingest_unified_medical_document
 
-    report_dict = process_and_store_lab_report(
+    doc_result = await ingest_unified_medical_document(
+        file_bytes=file_bytes,
+        original_filename=orig_name,
+        title=title,
         patient_id=target_patient_id,
         uploaded_by=user.full_name,
-        title=title,
-        file_name=file.filename or "report.pdf",
-        file_url="",
-        ocr_text=extracted_text,
-        parsed_metrics=parsed_metrics,
+        user_id=user.user_id,
     )
 
     log_audit_event(
         actor_id=user.user_id,
         actor_role=user.role,
-        action="UPLOAD_LAB_REPORT_HYBRID_PIPELINE",
+        action="UPLOAD_LAB_REPORT_UNIFIED_PIPELINE",
         target_patient_id=target_patient_id,
-        resource=f"/api/documents/lab-reports/{report_dict['id']}",
-        details=f"Uploaded raw document & normalized metrics to MongoDB: '{title}' ({file.filename})",
+        resource=f"/api/documents/lab-reports/{doc_result['id']}",
+        details=f"Uploaded raw document, normalized metrics & Pinecone indexed: '{title}' ({orig_name})",
     )
 
     return LabReportRecord(
-        id=report_dict["id"],
-        patient_id=report_dict["patient_id"],
-        uploaded_by=report_dict["uploaded_by"],
-        title=report_dict["title"],
-        extracted_text=report_dict["extracted_text"],
+        id=doc_result["id"],
+        patient_id=doc_result["patient_id"],
+        uploaded_by=doc_result["uploaded_by"],
+        title=doc_result["title"],
+        file_url=doc_result["file_url"],
+        extracted_text=doc_result["extracted_text"],
         metrics=[
             LabMetric(
                 name=m["name"],
                 value=m["value"],
-                unit=m["unit"],
+                unit=m.get("unit", ""),
                 reference_range=m.get("reference_range", ""),
                 is_abnormal=m.get("is_abnormal", False),
             )
-            for m in parsed_metrics
+            for m in doc_result.get("metrics", [])
         ],
-        uploaded_at=report_dict["uploaded_at"],
+        uploaded_at=doc_result["uploaded_at"],
     )
+

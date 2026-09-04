@@ -220,6 +220,7 @@ export interface WhatsNewChanges {
   }>;
   events_since_last_visit: string[];
   attention_items_count: number;
+  relevant_changes?: string[];
 }
 
 export interface EvidenceTrace {
@@ -228,6 +229,8 @@ export interface EvidenceTrace {
   title: string;
   evidence_sources: string[];
   relevant_changes: string[];
+  reasoning?: string;
+  sources?: Array<{ title: string; document_date?: string } | string>;
 }
 
 export interface StructuredVoiceNoteOut {
@@ -303,6 +306,7 @@ export interface ChatMessage {
   content?: string;
   quickOptions?: string[];
   isRedFlag?: boolean;
+  adapter_used?: string;
   sources?: ChatSource[];
   created_at?: string;
   createdAt?: string;
@@ -316,6 +320,10 @@ export interface ChatSession {
   createdAt?: string;
   updatedAt?: string;
   sourceIds?: string[];
+  doctor_id?: string;
+  patient_id?: string;
+  patient_name?: string;
+  is_patient_scoped?: boolean;
 }
 
 export type FacilityType = "hospital" | "clinic" | "pharmacy" | "diagnostic_center";

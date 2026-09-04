@@ -15,6 +15,7 @@ import {
   uploadLabReport,
   generateAIDietPlan,
   orderLabTest,
+  downloadDoctorConsultationPdf,
 } from "@/services/clinicalService";
 import type {
   ConsultationSession,
@@ -43,6 +44,8 @@ import {
   Trash2,
   Check,
   RefreshCw,
+  Download,
+  Printer,
 } from "lucide-react";
 
 export const ActiveConsultationSuite: React.FC = () => {
@@ -54,7 +57,8 @@ export const ActiveConsultationSuite: React.FC = () => {
   const [overview, setOverview] = useState<any>(null);
   const [labTrends, setLabTrends] = useState<LabMetricTrend[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [consultStep, setConsultStep] = useState<1 | 2 | 3 | 4>(1);
+  const [consultStep, setConsultStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
 
   // Step 1: Intake & Vitals (Clean, unpopulated initial state)
   const [symptomsInput, setSymptomsInput] = useState<string>("");
@@ -308,18 +312,32 @@ export const ActiveConsultationSuite: React.FC = () => {
     if (!session) return;
     try {
       setFinalizing(true);
-      await finalizeConsultation(session.id, {
+      const res = await finalizeConsultation(session.id, {
         doctor_diagnosis: diagnosisInput || "Clinical Wellness Advice",
         prescriptions,
         doctor_notes: doctorProgressNotes || intakeNotes,
         diet_recommendations: dietRecs.split(",").map((d) => d.trim()).filter(Boolean),
         follow_up_date: followUpDate,
       });
-      navigate(`/doctor/patient/${patientId}?tab=timeline`);
+      setSession(res);
+      setConsultStep(5);
     } catch (err) {
       console.error("Failed to finalize consultation", err);
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!session?.id) return;
+    try {
+      setDownloadingPdf(true);
+      const safeName = (patientName || "Patient").replace(/[^a-zA-Z0-9]/g, "_");
+      await downloadDoctorConsultationPdf(session.id, `MedSys_Prescription_${safeName}_${session.id.slice(0, 8)}.pdf`);
+    } catch (err) {
+      console.error("Failed to download PDF", err);
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -379,7 +397,7 @@ export const ActiveConsultationSuite: React.FC = () => {
 
           {/* DYNAMIC CONSULTATION VITALS STATUS */}
           <div className="flex items-center gap-3">
-            {vitalsRecorded && vitals.bp_systolic > 0 ? (
+            {vitalsRecorded && (vitals.bp_systolic ?? 0) > 0 ? (
               <>
                 <div className="rounded-xl bg-teal-deep/10 border border-teal-deep/20 px-3 py-2 text-center">
                   <span className="font-mono text-[10px] uppercase font-bold text-teal-deep block">BP</span>
@@ -974,6 +992,171 @@ export const ActiveConsultationSuite: React.FC = () => {
               >
                 <CheckCircle2 className="h-4 w-4" />
                 <span>{finalizing ? "Signing Off..." : "⚡ Sign Off & Sync to Patient Portal"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: CONSULTATION COMPLETED & OFFICIAL PDF EXPORT */}
+        {consultStep === 5 && (
+          <div className="rounded-2xl border border-emerald-500/30 bg-surface-card p-6 sm:p-8 space-y-6 shadow-xl animate-in fade-in duration-300">
+            {/* Header / Success Banner */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-hairline pb-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold text-ink">
+                    Consultation Finalized & Digitally Signed
+                  </h3>
+                  <p className="font-mono text-xs text-stone">
+                    Session ID: <span className="font-bold text-teal-deep">{session?.id}</span> • Synced to Patient Portal
+                  </p>
+                </div>
+              </div>
+
+              {/* PDF & Print Action Group */}
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl border border-hairline bg-bg-mist px-4 py-3 text-xs font-mono font-semibold text-stone hover:text-ink hover:bg-surface-card transition-all"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Print</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-teal-deep px-6 py-3 text-xs font-mono font-bold text-white hover:bg-teal-700 shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {downloadingPdf ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>Generating PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      <span>📄 1-Click Download Official Prescription PDF</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Live Clinical Summary Preview (Matching PDF Structure) */}
+            <div className="rounded-xl border border-hairline bg-bg-mist/60 p-6 space-y-6">
+              {/* Doctor & Patient Two-Column Header */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-hairline">
+                <div className="space-y-1">
+                  <span className="font-mono text-[10px] font-bold text-teal-deep uppercase">Attending Clinician</span>
+                  <p className="font-sans font-bold text-sm text-ink">{user?.fullName || "Dr. Attending Physician"}</p>
+                  <p className="font-mono text-xs text-stone">Specialty: General Practice & Internal Medicine</p>
+                  <p className="font-mono text-xs text-stone">Facility: MedSys Healthcare Center</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="font-mono text-[10px] font-bold text-teal-deep uppercase">Patient Profile</span>
+                  <p className="font-sans font-bold text-sm text-ink">{patientName}</p>
+                  <p className="font-mono text-xs text-stone">ID: {patientId} • Age: {overview?.profile?.age || 35} yrs • Blood: {overview?.profile?.bloodGroup || "O+"}</p>
+                  <p className="font-mono text-xs text-stone">Encounter Date: {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                </div>
+              </div>
+
+              {/* Encounter Vitals */}
+              {vitalsRecorded && (
+                <div className="space-y-2">
+                  <span className="font-mono text-[10px] font-bold text-stone uppercase block">Encounter Vitals</span>
+                  <div className="flex flex-wrap gap-2.5">
+                    <span className="rounded-lg border border-hairline bg-surface-card px-3 py-1.5 font-mono text-xs text-ink">
+                      BP: <strong className="text-teal-deep">{vitals.bp_systolic}/{vitals.bp_diastolic} mmHg</strong>
+                    </span>
+                    <span className="rounded-lg border border-hairline bg-surface-card px-3 py-1.5 font-mono text-xs text-ink">
+                      Heart Rate: <strong className="text-teal-deep">{vitals.heart_rate} bpm</strong>
+                    </span>
+                    <span className="rounded-lg border border-hairline bg-surface-card px-3 py-1.5 font-mono text-xs text-ink">
+                      Temp: <strong className="text-teal-deep">{vitals.temperature_c} °C</strong>
+                    </span>
+                    <span className="rounded-lg border border-hairline bg-surface-card px-3 py-1.5 font-mono text-xs text-ink">
+                      SpO2: <strong className="text-teal-deep">{vitals.spo2_pct} %</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Diagnosis & Notes */}
+              <div className="space-y-2">
+                <span className="font-mono text-[10px] font-bold text-stone uppercase block">Confirmed Clinical Diagnosis</span>
+                <p className="font-sans font-bold text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                  {diagnosisInput || "Clinical Assessment & Wellness Plan"}
+                </p>
+                {doctorProgressNotes && (
+                  <p className="font-sans text-xs text-ink bg-surface-card border border-hairline rounded-lg p-3 leading-relaxed">
+                    <strong className="text-stone">Clinical Findings: </strong>{doctorProgressNotes}
+                  </p>
+                )}
+              </div>
+
+              {/* Prescriptions Table */}
+              <div className="space-y-2">
+                <span className="font-mono text-[10px] font-bold text-stone uppercase block">Prescribed Medication Orders (Rx)</span>
+                {prescriptions.length === 0 ? (
+                  <p className="font-mono text-xs text-stone italic">No pharmacological medications prescribed.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-hairline bg-surface-card">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b border-hairline bg-bg-mist text-stone font-mono text-[10px] uppercase">
+                        <tr>
+                          <th className="p-3">Medication</th>
+                          <th className="p-3">Dosage</th>
+                          <th className="p-3">Frequency</th>
+                          <th className="p-3">Duration</th>
+                          <th className="p-3">Instructions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-hairline">
+                        {prescriptions.map((rx, idx) => (
+                          <tr key={idx} className="hover:bg-bg-mist/50">
+                            <td className="p-3 font-semibold text-ink">{rx.medication_name}</td>
+                            <td className="p-3 font-mono text-stone">{rx.dosage}</td>
+                            <td className="p-3 font-mono text-stone">{rx.frequency}</td>
+                            <td className="p-3 font-mono text-stone">{rx.duration_days} days</td>
+                            <td className="p-3 font-sans text-stone">{rx.instructions || "After meals"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Dietary Advice & Follow-Up */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="rounded-xl border border-hairline bg-surface-card p-4 space-y-1">
+                  <span className="font-mono text-[10px] font-bold text-stone uppercase">Dietary & Lifestyle Advice</span>
+                  <p className="font-sans text-xs text-ink leading-relaxed">{dietRecs}</p>
+                </div>
+                <div className="rounded-xl border border-teal-deep/30 bg-teal-deep/5 p-4 space-y-1">
+                  <span className="font-mono text-[10px] font-bold text-teal-deep uppercase">Next Follow-Up Appointment</span>
+                  <p className="font-mono text-sm font-bold text-ink">{followUpDate || "PRN (As needed)"}</p>
+                  <p className="font-mono text-[11px] text-stone">Auto-reserved on clinic calendar.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-hairline">
+              <span className="font-mono text-xs text-stone">
+                ✓ Ready for physical printing or PDF distribution to patient.
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate(`/doctor/patient/${patientId}?tab=timeline`)}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-ink px-6 py-3 text-xs font-mono font-bold text-bg-mist hover:opacity-90 transition-opacity"
+              >
+                <span>Go to Patient Workspace & Timeline →</span>
               </button>
             </div>
           </div>

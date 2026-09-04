@@ -12,9 +12,10 @@ import json
 import uuid
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.db import get_patient_db
+from app.db import get_doctor_db, get_patient_db
+from app.services.pdf_service import generate_consultation_pdf
 from app.models_v2 import (
     AlertRecord,
     AppointmentRecord,
@@ -74,17 +75,17 @@ async def get_doctor_command_center(
     db = get_patient_db()
 
     patient_ids = _get_doctor_patient_ids(db, user.user_id)
-    all_patients = list(db.patients.find({}, {"_id": 0}))
-    total_patients = len(all_patients) if len(all_patients) > len(patient_ids) else len(patient_ids)
-    total_consultations = db.consultations.count_documents({"$or": [{"doctor_id": user.user_id}, {"doctor_id": {"$exists": True}}]})
-    pending_labs_count = _count_pending_lab_reviews(db, patient_ids or [p["id"] for p in all_patients])
+    assigned_patients = list(db.patients.find({"id": {"$in": patient_ids}}, {"_id": 0})) if patient_ids else []
+    total_patients = len(assigned_patients)
+    total_consultations = db.consultations.count_documents({"doctor_id": user.user_id})
+    pending_labs_count = _count_pending_lab_reviews(db, patient_ids)
 
-    # Dynamic Triage Evaluation across assigned & system patients
+    # Dynamic Triage Evaluation across assigned patients
     triage_alerts = []
     seen_alert_keys = set()
 
-    # 1. Existing stored alerts in db.alerts
-    alert_rows = list(db.alerts.find({"$or": [{"doctor_id": user.user_id}, {"doctor_id": "doc_demodemo"}, {"doctor_id": {"$exists": False}}]}, {"_id": 0}).sort("created_at", -1))
+    # 1. Existing stored alerts in db.alerts for this doctor
+    alert_rows = list(db.alerts.find({"doctor_id": user.user_id}, {"_id": 0}).sort("created_at", -1))
     for r in alert_rows:
         key = f"{r['patient_id']}_{r['title']}"
         if key in seen_alert_keys:
@@ -105,8 +106,8 @@ async def get_doctor_command_center(
             )
         )
 
-    # 2. Compute Priority Triage alerts from abnormal vitals & lab metrics in MongoDB
-    for p in all_patients:
+    # 2. Compute Priority Triage alerts from abnormal vitals & lab metrics in MongoDB for assigned patients
+    for p in assigned_patients:
         p_id = p["id"]
         p_name = p.get("name") or p.get("fullName") or p_id
 
@@ -175,8 +176,8 @@ async def get_doctor_command_center(
                         created_at=datetime.now(timezone.utc).isoformat(),
                     ))
 
-    # Get appointments
-    appt_rows = list(db.appointments.find({}, {"_id": 0}).sort("appointment_date", 1))
+    # Get appointments strictly for this doctor
+    appt_rows = list(db.appointments.find({"doctor_id": user.user_id}, {"_id": 0}).sort("appointment_date", 1))
     appointments = [
         AppointmentRecord(
             id=r["id"],
@@ -205,7 +206,7 @@ async def get_doctor_command_center(
         total_patients=total_patients,
         total_consultations=total_consultations,
         todays_appointments_count=len(appointments),
-        pending_labs_count=max(pending_labs_count, 1),
+        pending_labs_count=pending_labs_count,
         active_alerts_count=len(triage_alerts),
         priority_queue=triage_alerts,
         todays_appointments=appointments,
@@ -216,18 +217,15 @@ async def get_doctor_command_center(
 async def get_assigned_patients(
     user: AuthenticatedUser = Depends(require_role("doctor")),
 ):
-    """Returns list of patients assigned to authorized doctor from MongoDB. Automatically includes all system patients so panel is complete."""
+    """Returns list of patients assigned to authorized doctor from MongoDB."""
     db = get_patient_db()
-    all_patients = list(db.patients.find({}, {"_id": 0}))
 
     # Map of assigned patient IDs for this doctor
     assignments = list(db.doctor_patient.find({"doctor_id": user.user_id, "status": "active"}, {"_id": 0}))
-    assigned_ids = {a["patient_id"] for a in assignments}
 
     result = []
     seen_ids = set()
 
-    # 1. Add explicitly assigned patients first
     for a in assignments:
         p_id = a["patient_id"]
         if p_id in seen_ids:
@@ -243,25 +241,6 @@ async def get_assigned_patients(
                 patient_age=patient.get("age"),
                 patient_gender=patient.get("gender"),
                 assigned_at=a.get("assigned_at", datetime.now(timezone.utc).isoformat()),
-                status="active",
-            )
-        )
-
-    # 2. Add any other patients in db.patients so doctor patient panel shows all patients
-    for p in all_patients:
-        p_id = p["id"]
-        if p_id in seen_ids:
-            continue
-        seen_ids.add(p_id)
-        result.append(
-            DoctorPatientAssignment(
-                id=f"asgn_{p_id}",
-                doctor_id=user.user_id,
-                patient_id=p_id,
-                patient_name=p.get("name") or p.get("fullName") or p_id,
-                patient_age=p.get("age"),
-                patient_gender=p.get("gender"),
-                assigned_at=datetime.now(timezone.utc).isoformat(),
                 status="active",
             )
         )
@@ -1068,6 +1047,77 @@ async def finalize_consultation_session(
     )
 
     return session
+
+
+@router.get("/consultations/{session_id}/pdf")
+async def download_consultation_pdf(
+    session_id: str,
+    user: AuthenticatedUser = Depends(require_role("doctor")),
+):
+    """Generates and streams an official printable PDF consultation summary & prescription."""
+    pdb = get_patient_db()
+    ddb = get_doctor_db()
+
+    consultation = pdb.consultations.find_one({"id": session_id}, {"_id": 0})
+    if not consultation:
+        raise HTTPException(status_code=404, detail="Consultation session not found")
+
+    if not verify_patient_access(consultation["patient_id"], user):
+        raise HTTPException(status_code=403, detail="Unauthorized access to patient consultation")
+
+    # Fetch doctor info
+    doctor_info = ddb.doctors.find_one({"id": user.user_id}, {"_id": 0}) or {
+        "name": user.full_name or "Dr. Attending Physician",
+        "specialization": "General Practice & Internal Medicine",
+        "hospital_name": "MedSys Healthcare Medical Center",
+        "license_number": "MED-SYS-77402",
+    }
+
+    # Fetch patient info
+    patient_info = pdb.patients.find_one({"id": consultation["patient_id"]}, {"_id": 0}) or {}
+    prof = pdb.profiles.find_one({"clerkUserId": consultation["patient_id"]}, {"_id": 0}) or {}
+    combined_patient = {**patient_info, **prof}
+
+    # Fetch prescriptions
+    prescriptions = list(pdb.prescriptions.find({"consultation_id": session_id}, {"_id": 0}))
+
+    # Parse vitals
+    vitals = {}
+    if consultation.get("vitals_json"):
+        try:
+            vitals = json.loads(consultation["vitals_json"])
+        except Exception:
+            pass
+
+    diet_advice = consultation.get("diet_advice", "")
+
+    pdf_bytes = generate_consultation_pdf(
+        doctor_info=doctor_info,
+        patient_info=combined_patient,
+        consultation=consultation,
+        prescriptions=prescriptions,
+        diet_advice=diet_advice,
+        vitals=vitals,
+    )
+
+    log_audit_event(
+        actor_id=user.user_id,
+        actor_role=user.role,
+        action="EXPORT_CONSULTATION_PRESCRIPTION_PDF",
+        target_patient_id=consultation["patient_id"],
+        resource=f"/api/doctor/consultations/{session_id}/pdf",
+        details=f"Doctor exported official PDF prescription for session {session_id}",
+    )
+
+    filename = f"MedSys_Prescription_{session_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
 
 
 @router.get("/patient/{patient_id}/safety-check")

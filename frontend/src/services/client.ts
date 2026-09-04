@@ -147,6 +147,26 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   return res.json() as Promise<T>;
 }
 
+export async function downloadPdfBlob(path: string, defaultFilename = "prescription.pdf"): Promise<void> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "GET",
+    headers,
+  });
+  if (!res.ok) {
+    throw new ApiError(`Failed to download PDF (HTTP ${res.status})`, res.status, await readErrorDetail(res));
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = defaultFilename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 function getFallbackData<T>(path: string): T {
   if (path.includes("/command-center")) {
     return {

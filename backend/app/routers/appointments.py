@@ -282,6 +282,23 @@ async def process_appointment_action(
 
     db.appointments.update_one({"id": appointment_id}, {"$set": {"status": new_status, "notes": new_notes}})
     updated_row = db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Generate patient notification alert
+    action_title = "Appointment Confirmed" if payload.action == "confirm" else ("Appointment Cancelled/Declined" if payload.action in ("decline", "cancel") else "Appointment Completed")
+    action_msg = f"Your appointment on {updated_row.get('appointment_date')} with {updated_row.get('doctor_name', 'Doctor')} has been {new_status}."
+    db.alerts.insert_one({
+        "id": f"alt_{uuid.uuid4().hex[:10]}",
+        "patient_id": updated_row["patient_id"],
+        "patient_name": updated_row.get("patient_name", "Patient"),
+        "doctor_id": user.user_id,
+        "type": "appointment_update",
+        "severity": "info" if payload.action in ("confirm", "complete") else "warning",
+        "title": action_title,
+        "message": action_msg,
+        "created_at": now,
+        "is_read": 0,
+    })
 
     log_audit_event(
         actor_id=user.user_id,
@@ -304,3 +321,29 @@ async def process_appointment_action(
         notes=updated_row["notes"] or "",
         created_at=updated_row["created_at"],
     )
+
+
+@router.get("/patient-latest-update")
+async def get_patient_latest_appointment_update(
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Returns the most recent appointment status update and any unread alerts for the patient."""
+    db = get_patient_db()
+    patient_id = user.user_id if user.role == "patient" else "pat_01"
+
+    latest_appt = db.appointments.find_one(
+        {"patient_id": patient_id},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+
+    recent_alert = db.alerts.find_one(
+        {"patient_id": patient_id, "type": "appointment_update"},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+
+    return {
+        "latest_appointment": latest_appt,
+        "recent_alert": recent_alert,
+    }

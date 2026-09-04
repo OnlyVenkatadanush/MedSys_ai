@@ -35,13 +35,52 @@ export function MessageBubble({
           <div
             className={`min-w-0 max-w-full overflow-hidden text-[14px] leading-relaxed text-stone-900 ${
               message.isRedFlag
-                ? "rounded-2xl border-2 border-red-500 bg-red-50/50 p-4"
+                ? "rounded-2xl border-2 border-red-500 bg-red-50/70 p-4.5 shadow-md shadow-red-500/10"
                 : ""
             }`}
           >
+            {message.isRedFlag && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-mono font-bold text-white shadow-xs">
+                <span className="animate-pulse text-sm">🚨</span>
+                <span>CRITICAL CLINICAL EMERGENCY ALERT</span>
+              </div>
+            )}
+
+            {message.adapter_used && (
+              <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-teal-600/30 bg-teal-50 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-teal-900 shadow-2xs">
+                <span className="text-teal-600 font-bold">⚡</span>
+                <span>{message.adapter_used} Adapter</span>
+              </div>
+            )}
+
             <Markdown content={message.content || message.message || ""} />
 
-            {message.quickOptions && message.quickOptions.length > 0 && (
+            {/* 1-CLICK EMERGENCY ACTION HANDOFF BUTTONS */}
+            {message.isRedFlag && (
+              <div className="mt-4 pt-3 border-t border-red-200/80 space-y-2">
+                <span className="block font-mono text-[11px] uppercase tracking-wider font-bold text-red-900">
+                  Immediate Emergency Actions:
+                </span>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <a
+                    href="tel:911"
+                    className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-mono font-bold text-white shadow-sm hover:bg-red-700 transition-colors"
+                  >
+                    <span>📞</span>
+                    <span>Call Emergency (911 / 112)</span>
+                  </a>
+                  <a
+                    href="/find-care"
+                    className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2.5 text-xs font-mono font-bold text-red-800 shadow-sm hover:bg-red-50 transition-colors"
+                  >
+                    <span>🏥</span>
+                    <span>Locate Nearest Emergency ER</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {message.quickOptions && message.quickOptions.length > 0 && !message.isRedFlag && (
               <div className="mt-3.5 flex flex-wrap gap-2 pt-2">
                 {message.quickOptions.map((option, idx) => (
                   <button

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
+import { Download } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { fetchPatientDashboard, logMedicationDose } from "@/services/clinicalService";
+import { fetchPatientDashboard, logMedicationDose, downloadPatientConsultationPdf } from "@/services/clinicalService";
 import { getProfile } from "@/services/profile";
 import type { ConsultationSession, MedicationSchedule } from "@/types";
 
@@ -134,6 +135,27 @@ export const PatientDashboard: React.FC = () => {
                         </p>
                       </div>
                     )}
+
+                    {/* PDF Download Button */}
+                    <div className="flex items-center justify-between border-t border-hairline pt-3">
+                      <span className="font-mono text-[11px] text-stone">
+                        Encounter ID: {advice.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await downloadPatientConsultationPdf(advice.id, `Prescription_${advice.id}.pdf`);
+                          } catch (err) {
+                            console.error("Failed to download PDF", err);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 rounded-xl bg-teal-deep px-4 py-2 text-xs font-mono font-bold text-white hover:bg-teal-700 transition-all shadow-xs active:scale-[0.98]"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>📄 Download Official Prescription PDF</span>
+                      </button>
+                    </div>
                   </div>
                 ))
               ) : (

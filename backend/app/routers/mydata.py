@@ -16,34 +16,32 @@ TEXT_EXTENSIONS = (".txt", ".md")
 async def upload_mydata(
     file: UploadFile = File(...), user_id: str = Depends(require_clerk_auth)
 ) -> dict:
-    if not (settings.ollama_vision_model or settings.groq_api_key):
-        raise HTTPException(
-            status_code=503,
-            detail="No vision model configured — set OLLAMA_VISION_MODEL or GROQ_API_KEY.",
-        )
-    if not (settings.ollama_model or settings.groq_api_key):
-        raise HTTPException(
-            status_code=503,
-            detail="No text model configured — set OLLAMA_MODEL or GROQ_API_KEY.",
-        )
-
     filename = file.filename or "Untitled document"
     raw = await file.read()
 
-    if filename.lower().endswith(TEXT_EXTENSIONS):
-        extracted_text = raw.decode("utf-8", errors="ignore")
-    else:
-        images = ocr.images_from_upload(filename, raw)
-        extracted_text = await ocr.extract_text(images)
+    from app.services.hybrid_db_service import ingest_unified_medical_document
+    from app.db import get_patient_db
 
-    report, kind = await asyncio.gather(
-        model_router.generate_report(extracted_text, filename),
-        model_router.classify_document(extracted_text),
+    db = get_patient_db()
+    pat = db.patients.find_one({"$or": [{"id": user_id}, {"clerk_id": user_id}]}, {"_id": 0})
+    patient_name = pat.get("name", "Patient") if pat else "Patient"
+    patient_id = pat.get("id", user_id) if pat else user_id
+
+    doc_result = await ingest_unified_medical_document(
+        file_bytes=raw,
+        original_filename=filename,
+        title=filename,
+        patient_id=patient_id,
+        uploaded_by=patient_name,
+        user_id=user_id,
     )
-    # Conditions/medications are extracted once, right now, instead of live
-    # on every Profile visit — Profile just reads the cached result back.
-    extracted = await model_router.extract_medical_history([report])
 
-    source = rag.ingest_report(filename, kind, report, owner_id=user_id, extracted=extracted)
-    await supermemory_client.log_document(source["id"], filename, kind, report, user_id)
-    return source
+    from datetime import datetime, timezone
+    return {
+        "id": doc_result["source_id"],
+        "title": filename,
+        "kind": doc_result.get("kind", "report"),
+        "uploadedAt": doc_result.get("uploaded_at", datetime.now(timezone.utc).isoformat()),
+        "excerpt": doc_result.get("report_summary", "")[:300],
+        "url": doc_result.get("file_url"),
+    }

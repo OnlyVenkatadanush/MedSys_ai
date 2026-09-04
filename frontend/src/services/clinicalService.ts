@@ -1,4 +1,4 @@
-import { apiFetch, apiUpload } from "./client";
+import { apiFetch, apiUpload, downloadPdfBlob } from "./client";
 import type {
   AlertRecord,
   AppointmentRecord,
@@ -331,4 +331,14 @@ export async function uploadLabReport(title: string, patientId: string, file: Fi
   formData.append("patient_id", patientId);
   formData.append("file", file);
   return apiUpload<LabReportRecord>("/api/documents/upload", formData);
+}
+
+export async function downloadDoctorConsultationPdf(sessionId: string, filename?: string): Promise<void> {
+  const name = filename || `MedSys_Prescription_${sessionId}.pdf`;
+  return downloadPdfBlob(`/api/doctor/consultations/${sessionId}/pdf`, name);
+}
+
+export async function downloadPatientConsultationPdf(sessionId: string, filename?: string): Promise<void> {
+  const name = filename || `Prescription_${sessionId}.pdf`;
+  return downloadPdfBlob(`/api/patient/consultations/${sessionId}/pdf`, name);
 }

@@ -483,6 +483,96 @@ async def _extract_from_one_document(text: str) -> dict:
     return {"conditions": conditions, "medications": medications}
 
 
+LAB_EXTRACTION_SYSTEM_PROMPT = """You are a clinical pathology and laboratory report parser.
+Analyze the provided medical report text (which may be OCR output from a blood test, urine test, metabolic panel, lipid panel, etc.).
+
+Extract all specific laboratory test metrics mentioned with their numeric values, units, reference range, and abnormality status.
+
+For each test found, extract:
+- "name": Standard laboratory test name (e.g. "Fasting Blood Glucose", "HbA1c", "Total Cholesterol", "Triglycerides", "HDL", "LDL", "Serum Creatinine", "Blood Urea Nitrogen", "Hemoglobin", "WBC Count", "Platelets", "TSH", "ALT (SGPT)", "AST (SGOT)")
+- "value": Floating point number of the patient's result
+- "unit": Unit of measurement (e.g. "mg/dL", "g/dL", "%", "U/L", "cells/mcL", "mIU/L")
+- "reference_range": Normal reference interval (e.g. "70-99", "12.0-16.0", "< 200", "0.7-1.3")
+- "is_abnormal": Boolean (true if patient's result is outside normal reference interval, false if within normal limits)
+
+Return ONLY a JSON object of this exact schema, with no markdown code fences, no preamble, and no extra text:
+{"metrics": [{"name": "Fasting Blood Glucose", "value": 110.0, "unit": "mg/dL", "reference_range": "70-99", "is_abnormal": true}]}
+If no specific numerical lab test metrics are identifiable in the text, return {"metrics": []}."""
+
+
+async def extract_lab_metrics(text: str) -> list[dict]:
+    """Extracts structured clinical lab test metrics from OCR or text.
+    Falls back to regex pattern matching for standard blood/metabolic metrics if LLM is unavailable."""
+    if not text or not text.strip():
+        return []
+
+    clean_text = text.strip()[:4000]
+    
+    # Try LLM extraction first
+    try:
+        raw = await _complete(clean_text, system=LAB_EXTRACTION_SYSTEM_PROMPT, timeout=45.0)
+        data = None
+        try:
+            data = json.loads(raw.strip())
+        except json.JSONDecodeError:
+            match = _JSON_OBJECT.search(raw)
+            if match:
+                data = json.loads(match.group(0))
+        
+        if data and isinstance(data.get("metrics"), list) and len(data["metrics"]) > 0:
+            parsed = []
+            for m in data["metrics"]:
+                if isinstance(m, dict) and m.get("name") and m.get("value") is not None:
+                    try:
+                        val = float(m["value"])
+                        parsed.append({
+                            "name": str(m["name"]).strip(),
+                            "value": val,
+                            "unit": str(m.get("unit") or "").strip(),
+                            "reference_range": str(m.get("reference_range") or "").strip(),
+                            "is_abnormal": bool(m.get("is_abnormal", False)),
+                        })
+                    except (ValueError, TypeError):
+                        continue
+            if parsed:
+                return parsed
+    except Exception:
+        pass
+
+    # Regex heuristic fallback for standard laboratory metrics
+    fallback_metrics = []
+    patterns = [
+        (r"(?:glucose|fasting\s*blood\s*sugar|fbs)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Fasting Glucose", "mg/dL", 70.0, 99.0),
+        (r"(?:hba1c|glycated\s*hemoglobin)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "HbA1c", "%", 4.0, 5.6),
+        (r"(?:total\s*cholesterol)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Total Cholesterol", "mg/dL", 125.0, 200.0),
+        (r"(?:triglycerides|tg)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Triglycerides", "mg/dL", 50.0, 150.0),
+        (r"(?:creatinine|serum\s*creatinine)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Serum Creatinine", "mg/dL", 0.6, 1.2),
+        (r"(?:hemoglobin|hb)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Hemoglobin", "g/dL", 12.0, 16.0),
+        (r"(?:wbc|white\s*blood\s*cells)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "WBC Count", "cells/mcL", 4500.0, 11000.0),
+        (r"(?:platelets|platelet\s*count)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "Platelets", "k/mcL", 150.0, 450.0),
+        (r"(?:tsh|thyroid\s*stimulating\s*hormone)\s*[:=-]?\s*(\d+(?:\.\d+)?)", "TSH", "mIU/L", 0.4, 4.0),
+    ]
+
+    lower_text = clean_text.lower()
+    for regex_pat, name, unit, min_ref, max_ref in patterns:
+        m = re.search(regex_pat, lower_text)
+        if m:
+            try:
+                val = float(m.group(1))
+                is_ab = val < min_ref or val > max_ref
+                fallback_metrics.append({
+                    "name": name,
+                    "value": val,
+                    "unit": unit,
+                    "reference_range": f"{min_ref}-{max_ref}",
+                    "is_abnormal": is_ab,
+                })
+            except (ValueError, TypeError):
+                continue
+
+    return fallback_metrics
+
+
 async def extract_medical_history(documents: list[str]) -> dict:
     """Derives conditions + medications from the user's own uploaded reports,
     consultations, and prescriptions — every document, past and present,

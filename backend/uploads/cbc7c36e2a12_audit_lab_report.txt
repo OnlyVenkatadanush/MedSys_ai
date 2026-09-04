@@ -1,0 +1,6 @@
+METABOLIC & LIPID LAB REPORT
+Patient: Audit Test Patient
+Fasting Blood Sugar: 135 mg/dL (Reference: 70-99)
+Total Cholesterol: 235 mg/dL (Reference: 125-200)
+HbA1c: 6.8 % (Reference: 4.0-5.6)
+Serum Creatinine: 1.1 mg/dL (Reference: 0.6-1.2)
